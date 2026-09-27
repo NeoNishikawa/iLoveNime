@@ -101,11 +101,30 @@ test("idle lebih dari lima menit hanya menghitung sampai batas idle lalu pulih p
   h.tracker.stop();
 });
 
-test("ambang uji sementara satu menit memunculkan alert final level 12 tanpa lanjut", () => {
-  assert.equal(screenTime.SCREEN_TIME_TEST_MODE, true);
-  assert.equal(screenTime.SCREEN_TIME_THRESHOLDS[3], 60_000);
+test("mode asli aktif: ambang pertama muncul tepat setelah tiga jam aktif", () => {
+  assert.equal(screenTime.SCREEN_TIME_TEST_MODE, false);
+  assert.equal(screenTime.SCREEN_TIME_THRESHOLDS[3], 10_800_000);
   assert.deepEqual(screenTime.SCREEN_TIME_PRODUCTION_THRESHOLDS, { 3: 10_800_000, 5: 18_000_000, 7: 25_200_000, 12: 43_200_000 });
   const h = harness();
+  h.tracker.start();
+  h.runActiveMinutes(179);
+  assert.deepEqual(h.reminders, []);
+  assert.equal(h.tracker.getState().activeMs, 10_740_000);
+  h.advance(59_999, { activity: true });
+  assert.deepEqual(h.reminders, []);
+  h.advance(1, { activity: true });
+  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3]);
+  assert.equal(h.tracker.getState().lastTriggeredThreshold, 3);
+  h.advance(60_000, { activity: true });
+  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3]);
+  h.tracker.stop();
+});
+
+test("override test satu menit memunculkan alert final level 12 tanpa lanjut", () => {
+  const h = harness(null, {
+    testMode: true,
+    thresholds: { ...screenTime.SCREEN_TIME_PRODUCTION_THRESHOLDS, 3: 60_000 },
+  });
   h.tracker.start();
   h.runActiveMinutes(1);
   assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [12]);

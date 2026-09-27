@@ -1,5 +1,5 @@
 export const SCREEN_TIME_KEY = "iln:screen-time";
-export const SCREEN_TIME_TEST_MODE = true; // Set false after the one-minute final-alert trial is verified.
+export const SCREEN_TIME_TEST_MODE = false;
 export const SCREEN_TIME_PRODUCTION_THRESHOLDS = Object.freeze({ 3: 10_800_000, 5: 18_000_000, 7: 25_200_000, 12: 43_200_000 });
 export const SCREEN_TIME_THRESHOLDS = Object.freeze({
   ...SCREEN_TIME_PRODUCTION_THRESHOLDS,

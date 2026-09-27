@@ -78,6 +78,7 @@ test("countdown dinonaktifkan agar tidak membuat timer atau refresh berulang", (
 test("pengingat screen-time accessible, lokal, dan tidak mengendalikan iframe/PiP", () => {
   assert.match(screenTimeSource, /role="dialog" aria-modal="true" aria-labelledby=/);
   assert.match(screenTimeSource, /if \(thresholdHours === 3 \|\| thresholdHours === 5 \|\| thresholdHours === 7 \|\| thresholdHours === 12\) showDialog\(thresholdHours, activeMs\)/);
+  assert.match(screenTimeSource, /SCREEN_TIME_TEST_MODE = false/);
   assert.match(screenTimeSource, /testMode && state\.activeMs >= thresholds\[3\][\s\S]*?emitReminder\(12\)/);
   assert.match(screenTimeSource, /intervalMs = testMode \? 1_000 : SCHEDULER_MS/);
   assert.match(screenTimeSource, /const continueButton = button\("Lanjutkan", "dismiss", true\);\s*actions\.append\(button\("Tutup web", "close-website"\), continueButton\)/);
