@@ -1,6 +1,8 @@
 import { api } from "./api.js";
 import { attach, closeActive } from "./dropdown.js";
 import { pageSizeFor, pageCountFor, pageSlice, isItemComplete, isAllowedAvatarFile, buildExportPayload, mergeImportedProfile } from "./app-utils.js";
+import { createScreenTimeTracker, mountScreenTimeUI } from "./screen-time.js";
+import { createPerformanceController } from "./performance-mode.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
@@ -15,6 +17,13 @@ const statusText = (v) => ({ planned: "Plan to Watch", watching: "Watching", com
 const mobileQuery = window.matchMedia("(max-width: 1023px)");
 let prefs = (() => { try { return { theme: "dark", sidebarCollapsed: false, username: "Anime watcher", handle: "Local profile", avatarUrl: "", ...JSON.parse(localStorage.getItem(PREFS_KEY) || "{}") }; } catch { return { theme: "dark", sidebarCollapsed: false, username: "Anime watcher", handle: "Local profile", avatarUrl: "" }; } })();
 const state = { daily: [], genres: [], searchResults: [], storageItems: [], mainGenres: new Set(), storageGenres: new Set(), mainCharacters: new Set(), storageCharacters: new Set(), activeGenres: new Set(), currentTab: "All", localQuery: "", searchQuery: "", searchLoading: false, storageFilterLoading: false, detail: null, episodeIndex: -1, mirrors: [], mirrorIndex: 0, selectedStorageItems: new Set(), editMode: false, searchToken: 0, searchPage: 0, storagePage: 0, filteredSearchCount: 0, filteredStorageCount: 0 };
+
+let screenTimeUI = null;
+const screenTimeTracker = createScreenTimeTracker({ storage: localStorage, documentRef: document, windowRef: window, onReminder: (reminder) => screenTimeUI?.show(reminder) });
+screenTimeUI = mountScreenTimeUI({ tracker: screenTimeTracker, documentRef: document });
+screenTimeTracker.start();
+const performanceController = createPerformanceController({ storage: localStorage, documentRef: document, navigatorRef: navigator });
+window.ilnPerformanceController = performanceController;
 
 /* ---------- Drawer mobile ---------- */
 const sidebar = $("#sidebar");
@@ -45,12 +54,15 @@ function staggerIn(container) {
   const items = [...container.children];
   if (!items.length) return;
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  items.forEach((item, index) => {
-    item.classList.remove("card-enter");
-    if (reduced) return;
-    void item.offsetWidth;
-    item.style.setProperty("--enter-delay", `${Math.min(index, 14) * 35}ms`);
-    item.classList.add("card-enter");
+  const tier = document.documentElement.dataset.performanceTier || "full";
+  const limit = tier === "balanced" ? 8 : 12;
+  items.forEach((item) => item.classList.remove("card-enter"));
+  if (reduced || tier === "low") return;
+  const animated = items.slice(0, limit);
+  animated.forEach((item, index) => item.style.setProperty("--enter-delay", `${index * 28}ms`));
+  requestAnimationFrame(() => {
+    if (document.documentElement.dataset.performanceTier === "low" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    animated.forEach((item) => item.classList.add("card-enter"));
   });
 }
 
@@ -61,7 +73,8 @@ let scrollObserver = null;
 function setupScrollReveal() {
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   scrollObserver?.disconnect();
-  if (reduced || !("IntersectionObserver" in window)) return;
+  scrollObserver = null;
+  if (reduced || document.documentElement.dataset.performanceTier === "low" || !("IntersectionObserver" in window)) return;
   scrollObserver = new IntersectionObserver((entries) => {
     for (const entry of entries) entry.target.classList.toggle("scroll-hidden", !entry.isIntersecting);
   }, { root: $("#mainScroll"), rootMargin: "0px 0px -8% 0px", threshold: 0.05 });
@@ -70,6 +83,16 @@ function observeScrollReveal(container) {
   if (!container || !scrollObserver) return;
   const items = [...container.querySelectorAll(".anime-card")];
   items.forEach((item) => { item.classList.add("scroll-reveal"); scrollObserver.observe(item); });
+}
+function installDevLongTaskMonitor() {
+  if (new URLSearchParams(window.location.search).get("iln-dev") !== "1" || !("PerformanceObserver" in window)) return;
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) console.info(`[iLoveNime dev] long task ${Math.round(entry.duration)}ms`, entry);
+    });
+    observer.observe({ type: "longtask", buffered: true });
+    window.__ilnLongTaskObserver = observer;
+  } catch { /* Long Task API is not available in every browser. */ }
 }
 
 /* ---------- Pager grid: slide 6×3 (desktop) / 3×3 (mobile) ---------- */
@@ -462,6 +485,13 @@ function setup() {
   document.addEventListener("click", (event) => { const detail = event.target.closest?.('[data-act="detail"]'); const add = event.target.closest?.('[data-act="add"]'); const check = event.target.closest?.('[data-act="check"]'); const remove = event.target.closest?.('[data-act="remove"]'); if (detail) { event.preventDefault(); event.stopPropagation(); openDetail(detail.dataset.id); } else if (add) { event.preventDefault(); event.stopPropagation(); addStorage(add.dataset.id); } else if (check) { event.preventDefault(); event.stopPropagation(); const id = check.dataset.id; state.selectedStorageItems.has(id) ? state.selectedStorageItems.delete(id) : state.selectedStorageItems.add(id); renderStorage(); } else if (remove) { /* Hold selesai memicu removeStorage sendiri (holdDone);
      klik singkat: konfirmasi dulu */ const btn = remove; const heldAt = Number(btn.dataset.holdDone || 0); if (Date.now() - heldAt < 600) return; event.preventDefault(); event.stopPropagation(); const id = btn.dataset.id; const item = state.storageItems.find((i) => i.slug === id); openConfirm("Hapus dari Local Storage?", `${item?.title || "Anime ini"} akan dihapus dari koleksimu.`, () => removeStorage(id)); } });
   document.documentElement.dataset.theme = prefs.theme;
+  const performanceSelect = $("#performanceMode");
+  if (performanceSelect) {
+    performanceSelect.value = performanceController.getMode();
+    performanceSelect.addEventListener("change", () => performanceController.setMode(performanceSelect.value));
+  }
+  document.addEventListener("iln:performance-change", () => setupScrollReveal());
+  installDevLongTaskMonitor();
   $$(".theme-checkbox").forEach((input) => { input.checked = prefs.theme === "light"; input.onchange = () => { prefs.theme = input.checked ? "light" : "dark"; saveState(); /* Matikan transition sekejap agar ratusan elemen tidak
      men-transition warna bersamaan (jank 30fps→1fps) */ const rootEl = document.documentElement; rootEl.classList.add("theme-switching"); rootEl.dataset.theme = prefs.theme; $$(".theme-checkbox").forEach((x) => x.checked = input.checked); setTimeout(() => rootEl.classList.remove("theme-switching"), 240); }; });
   $("#sbToggle").onclick = () => { const appEl = $("#app"); /* Matikan biaya paint mahal (backdrop-filter & transisi kartu)
@@ -527,7 +557,21 @@ function setup() {
   $("#importFile").onchange = (e) => { const file = e.target.files?.[0]; if (!file) return; thoughtStart("import"); const reader = new FileReader(); reader.onload = async () => { try { thoughtStage("Importing", 38); const data = JSON.parse(reader.result); const items = Array.isArray(data) ? data : data.items || data.storageItems; if (!Array.isArray(items)) throw new Error("Format backup tidak dikenali."); await thoughtProgress(38, 92, 700); state.storageItems = items.map(normalizeStored).filter((x) => x.slug); /* v2: pulihkan juga profil (nama, handle, foto, tema) */ const restoredProfile = Boolean(data.profile); if (restoredProfile) { prefs = mergeImportedProfile(data, prefs); document.documentElement.dataset.theme = prefs.theme; $$(".theme-checkbox").forEach((x) => x.checked = prefs.theme === "light"); if (prefs.sidebarCollapsed && !mobileQuery.matches) $("#app").classList.add("collapsed"); else $("#app").classList.remove("collapsed"); } saveState(); renderAll(); thoughtDone(); toast("Import selesai", `${state.storageItems.length} anime dipulihkan.${restoredProfile ? " Profil juga dipulihkan." : ""}`); } catch (error) { thoughtDone(); toast("Import gagal", error.message); } }; reader.readAsText(file); e.target.value = ""; };
   $$(".nav-item[data-nav]").forEach((b) => b.onclick = () => { const map = { dashboard: "#profileSection", update: "#updateSection", storage: "#storageSection" }; scrollToSection(map[b.dataset.nav], b); setDrawer(false); });
   const mainScroll = $("#mainScroll");
-  mainScroll?.addEventListener("scroll", () => { const sections = [["#profileSection","dashboard"],["#updateSection","update"],["#storageSection","storage"]]; let active = "dashboard"; for (const [selector, name] of sections) { const el = $(selector); if (el && el.offsetTop - mainScroll.scrollTop < 180) active = name; } $$(".nav-item[data-nav]").forEach((b) => b.classList.toggle("active", b.dataset.nav === active)); }, { passive: true });
+  let scrollFrame = 0;
+  const updateActiveNav = () => {
+    scrollFrame = 0;
+    if (!mainScroll) return;
+    const scrollTop = mainScroll.scrollTop;
+    const sections = [["#profileSection", "dashboard"], ["#updateSection", "update"], ["#storageSection", "storage"]]
+      .map(([selector, name]) => ({ top: $(selector)?.offsetTop, name }))
+      .filter((section) => Number.isFinite(section.top));
+    let active = "dashboard";
+    for (const section of sections) if (section.top - scrollTop < 180) active = section.name;
+    const navItems = $$(".nav-item[data-nav]");
+    navItems.forEach((button) => button.classList.toggle("active", button.dataset.nav === active));
+  };
+  mainScroll?.addEventListener("scroll", () => { if (!scrollFrame) scrollFrame = requestAnimationFrame(updateActiveNav); }, { passive: true });
+  updateActiveNav();
   $$(".nav-item[data-support]").forEach((b) => b.onclick = () => { setDrawer(false); if (b.dataset.support === "about") openAbout(); if (b.dataset.support === "donate") window.open("https://sociabuzz.com/neonishikawa/tribe", "_blank", "noopener"); if (b.dataset.support === "feedback") window.open("https://tally.so/r/7RAZd2", "_blank", "noopener"); });
   $("#profilePopup").addEventListener("click", (e) => { if (e.target === $("#profilePopup")) finishEdit(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!$("#watchOverlay").hidden) closeWatch(); else $("#profilePopup").hidden = true; } });

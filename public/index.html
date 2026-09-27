@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/css/base.css" />
 <link rel="stylesheet" href="/css/layout.css" />
 <link rel="stylesheet" href="/css/components.css" />
+<link rel="stylesheet" href="/css/screen-time.css" />
 <link rel="stylesheet" href="/css/animations.css" />
 <link rel="stylesheet" href="/css/responsive.css" />
 <script type="importmap">{ "imports": { "three": "/vendor/three/three.module.js" } }</script>
@@ -153,6 +154,15 @@
       </div>
 
       <div class="header-right">
+        <label class="performance-control" for="performanceMode">
+          <span>Animasi</span>
+          <select id="performanceMode" aria-label="Mode performa animasi">
+            <option value="auto">Otomatis</option>
+            <option value="full">Penuh</option>
+            <option value="balanced">Seimbang</option>
+            <option value="low">Hemat</option>
+          </select>
+        </label>
         <label class="theme-switch" title="Toggle theme">
           <input type="checkbox" class="theme-checkbox">
           <span class="ts-track">

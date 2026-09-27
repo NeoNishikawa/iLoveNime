@@ -8,6 +8,7 @@ const componentsCss = fs.readFileSync(path.join(__dirname, "../public/css/compon
 const referenceApp = fs.readFileSync(path.join(__dirname, "../public/js/reference-app.js"), "utf8");
 const apiSource = fs.readFileSync(path.join(__dirname, "../public/js/api.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(__dirname, "../public/index.html"), "utf8");
+const screenTimeSource = fs.readFileSync(path.join(__dirname, "../public/js/screen-time.js"), "utf8");
 test.before(async () => {
   const source = fs.readFileSync(path.join(__dirname, "../public/js/view.js"), "utf8");
   view = await import(`data:text/javascript,${encodeURIComponent(source)}`);
@@ -70,4 +71,17 @@ test("Search memiliki retry HTTP-aware dan indikator loading retry", () => {
 test("countdown dinonaktifkan agar tidak membuat timer atau refresh berulang", () => {
   assert.doesNotMatch(indexHtml, /data-support="countdown"/);
   assert.doesNotMatch(referenceApp, /COUNTDOWN_TARGETS|getCountdownParts|openCountdown|setInterval/);
+});
+
+test("pengingat screen-time accessible, lokal, dan tidak mengendalikan iframe/PiP", () => {
+  assert.match(screenTimeSource, /role="dialog" aria-modal="true" aria-labelledby=/);
+  assert.match(screenTimeSource, /aria-live="polite"/);
+  assert.match(screenTimeSource, /if \(thresholdHours === 3\) \{[\s\S]*?toast\.hidden = false;/);
+  assert.match(screenTimeSource, /else if \(thresholdHours === 5 \|\| thresholdHours === 7\) \{\s*showDialog\(thresholdHours\)/);
+  assert.match(screenTimeSource, /querySelectorAll\("button:not\(\[disabled\]\)/);
+  assert.match(screenTimeSource, /event\.stopPropagation\(\)/);
+  assert.match(referenceApp, /createScreenTimeTracker/);
+  assert.match(screenTimeSource, /localStorage/);
+  assert.doesNotMatch(screenTimeSource, /iframe\.src|closePipWindow|playerBox/);
+  assert.match(indexHtml, /id="performanceMode"/);
 });

@@ -1,0 +1,69 @@
+.performance-control{display:inline-flex;align-items:center;gap:7px;color:var(--text-2);font-size:11px;font-weight:700;white-space:nowrap}
+.performance-control select{min-height:34px;max-width:124px;padding:0 25px 0 10px;border:1px solid var(--border);border-radius:9px;color:var(--text);background:var(--surface);font:inherit;font-size:11px;cursor:pointer}
+.performance-control select:focus-visible{outline:2px solid var(--gold-2);outline-offset:2px}
+.screen-time-root{position:static}
+.screen-time-toast{position:fixed;top:18px;right:18px;z-index:550;display:flex;align-items:center;gap:13px;width:min(390px,calc(100vw - 28px));padding:12px 40px 12px 12px;border:1px solid color-mix(in srgb,var(--gold) 42%,var(--border));border-radius:16px;color:var(--text);background:var(--surface);box-shadow:0 18px 50px rgba(0,0,0,.38);animation:screenTimeIn .22s var(--ease-out)}
+.screen-time-toast[hidden],.screen-time-overlay[hidden]{display:none}
+.screen-time-toast img{flex:none;width:74px;height:74px;object-fit:contain}
+.screen-time-toast__copy{display:grid;gap:4px}
+.screen-time-toast__copy strong{font-size:13px;color:var(--gold)}
+.screen-time-toast__copy span{color:var(--text-2);font-size:12px;line-height:1.5}
+.screen-time-close{position:absolute;top:7px;right:8px;width:28px;height:28px;border:0;border-radius:8px;color:var(--text-2);background:transparent;font-size:22px;line-height:1;cursor:pointer}
+.screen-time-close:hover{color:var(--text);background:var(--surface-3)}
+.screen-time-overlay{position:fixed;inset:0;z-index:590;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.72);backdrop-filter:blur(5px);animation:fadeIn .18s ease-out}
+.screen-time-dialog{width:min(510px,100%);max-height:min(90vh,760px);overflow:auto;padding:26px 30px 28px;border:1px solid color-mix(in srgb,var(--gold) 28%,var(--border));border-radius:22px;color:var(--text);background:var(--surface);box-shadow:0 26px 80px rgba(0,0,0,.5);text-align:center;animation:screenTimeIn .24s var(--ease-out)}
+.screen-time-dialog:focus{outline:none}
+.screen-time-dialog__image{display:block;width:clamp(120px,30vw,168px);height:clamp(120px,30vw,168px);margin:0 auto 12px;object-fit:contain}
+.screen-time-eyebrow{margin:0 0 7px;color:var(--gold);font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+.screen-time-dialog h2{margin:0;color:var(--text);font-size:clamp(22px,4vw,30px);line-height:1.14;letter-spacing:-.04em}
+.screen-time-description{max-width:390px;margin:12px auto 0;color:var(--text-2);font-size:14px;line-height:1.65}
+.screen-time-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:9px;margin-top:23px}
+.screen-time-btn{min-height:42px;padding:10px 14px;border:1px solid var(--border);border-radius:11px;color:var(--text);background:var(--surface-2);font:inherit;font-size:12px;font-weight:800;cursor:pointer;transition:transform .18s var(--ease-out),border-color .18s ease-out,background-color .18s ease-out}
+.screen-time-btn:hover{border-color:var(--gold-2);transform:translateY(-1px)}
+.screen-time-btn:focus-visible{outline:2px solid var(--gold-2);outline-offset:3px}
+.screen-time-btn.is-primary{border-color:var(--gold);color:#191408;background:var(--gold)}
+.screen-time-btn.is-primary:hover{background:var(--gold-2)}
+@keyframes screenTimeIn{from{opacity:0;transform:translateY(9px) scale(.985)}to{opacity:1;transform:none}}
+
+@media(max-width:767px){
+  .performance-control{gap:4px}
+  .performance-control select{max-width:105px;min-height:32px;padding-left:7px;padding-right:20px;font-size:10px}
+  .screen-time-toast{top:10px;right:10px;width:min(360px,calc(100vw - 20px));gap:9px;padding:10px 36px 10px 9px}
+  .screen-time-toast img{width:62px;height:62px}
+  .screen-time-toast__copy strong{font-size:12px}
+  .screen-time-toast__copy span{font-size:11px}
+  .screen-time-dialog{padding:22px 18px 20px}
+  .screen-time-actions{flex-direction:column}
+  .screen-time-btn{width:100%}
+}
+@media(max-width:420px){.performance-control>span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}}
+
+/* Auto/Balanced/Low trim expensive decoration without changing layout or core feedback. */
+html[data-performance-tier="balanced"] .header,
+html[data-performance-tier="balanced"] .screen-time-overlay,
+html[data-performance-tier="balanced"] .drawer-overlay,
+html[data-performance-tier="balanced"] .thought-overlay{backdrop-filter:none}
+html[data-performance-tier="balanced"] .anime-card.card-enter{animation-duration:.24s}
+html[data-performance-tier="balanced"] .fire-cursor,
+html[data-performance-tier="balanced"] .level-border::before,
+html[data-performance-tier="balanced"] .level-border::after{animation:none}
+html[data-performance-tier="low"] #ambientCanvas,
+html[data-performance-tier="low"] .fire-cursor{display:none!important}
+html[data-performance-tier="low"] .header,
+html[data-performance-tier="low"] .screen-time-overlay,
+html[data-performance-tier="low"] .drawer-overlay,
+html[data-performance-tier="low"] .thought-overlay{backdrop-filter:none!important}
+html[data-performance-tier="low"] .anime-card,
+html[data-performance-tier="low"] .profile-card,
+html[data-performance-tier="low"] .thought-card,
+html[data-performance-tier="low"] .screen-time-toast,
+html[data-performance-tier="low"] .screen-time-dialog{box-shadow:none}
+html[data-performance-tier="low"] .scroll-reveal{transition:none!important;opacity:1!important;transform:none!important}
+html[data-performance-tier="low"] .card-enter,
+html[data-performance-tier="low"] .fire-cursor *,
+html[data-performance-tier="low"] .level-border::before,
+html[data-performance-tier="low"] .level-border::after,
+html[data-performance-tier="low"] .thought-orb *,
+html[data-performance-tier="low"] .confetti,
+html[data-performance-tier="low"] .erase-sad{animation:none!important}
+@media(prefers-reduced-motion:reduce){.screen-time-toast,.screen-time-dialog{animation:none}.screen-time-btn{transition:none}}
