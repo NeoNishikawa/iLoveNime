@@ -1,5 +1,10 @@
 export const SCREEN_TIME_KEY = "iln:screen-time";
-export const SCREEN_TIME_THRESHOLDS = Object.freeze({ 3: 60_000, 5: 18_000_000, 7: 25_200_000 }); // Uji sementara; kembalikan 3 jam (10_800_000 ms) setelah percobaan.
+export const SCREEN_TIME_TEST_MODE = true; // Set false after the one-minute final-alert trial is verified.
+export const SCREEN_TIME_PRODUCTION_THRESHOLDS = Object.freeze({ 3: 10_800_000, 5: 18_000_000, 7: 25_200_000, 12: 43_200_000 });
+export const SCREEN_TIME_THRESHOLDS = Object.freeze({
+  ...SCREEN_TIME_PRODUCTION_THRESHOLDS,
+  3: SCREEN_TIME_TEST_MODE ? 60_000 : SCREEN_TIME_PRODUCTION_THRESHOLDS[3],
+});
 export const SCREEN_TIME_IDLE_MS = 5 * 60_000;
 export const SCREEN_TIME_SNOOZE_MS = 30 * 60_000;
 const SCHEDULER_MS = 45_000;
@@ -20,7 +25,7 @@ function normalizeState(raw, date) {
     date,
     activeMs: Number.isFinite(Number(raw.activeMs)) ? Math.max(0, Number(raw.activeMs)) : 0,
     lastActiveAt: Number.isFinite(Number(raw.lastActiveAt)) ? Math.max(0, Number(raw.lastActiveAt)) : 0,
-    lastTriggeredThreshold: [0, 3, 5, 7].includes(threshold) ? threshold : 0,
+    lastTriggeredThreshold: [0, 3, 5, 7, 12].includes(threshold) ? threshold : 0,
     snoozeUntil: Number.isFinite(Number(raw.snoozeUntil)) ? Math.max(0, Number(raw.snoozeUntil)) : 0,
     enabled: raw.enabled !== false,
   };
@@ -38,9 +43,11 @@ export function createScreenTimeTracker({
   scheduler = globalThis,
   onReminder = () => {},
   idleMs = SCREEN_TIME_IDLE_MS,
-  intervalMs = SCHEDULER_MS,
+  testMode = SCREEN_TIME_TEST_MODE,
+  intervalMs = testMode ? 1_000 : SCHEDULER_MS,
   storageKey = SCREEN_TIME_KEY,
   dateKey = localDateKey,
+  thresholds = SCREEN_TIME_THRESHOLDS,
 } = {}) {
   const readStored = () => {
     const today = dateKey(clock.wallNow());
@@ -96,27 +103,41 @@ export function createScreenTimeTracker({
   };
   const checkThresholds = (nowWall = clock.wallNow()) => {
     if (!state.enabled) return;
-    if (state.activeMs >= SCREEN_TIME_THRESHOLDS[7] && state.lastTriggeredThreshold < 7) {
+    if (testMode && state.activeMs >= thresholds[3] && state.lastTriggeredThreshold < 12) {
+      state.lastTriggeredThreshold = 12;
+      state.snoozeUntil = 0;
+      persist(true);
+      emitReminder(12);
+      return;
+    }
+    if (state.activeMs >= thresholds[12] && state.lastTriggeredThreshold < 12) {
+      state.lastTriggeredThreshold = 12;
+      state.snoozeUntil = 0;
+      persist(true);
+      emitReminder(12);
+      return;
+    }
+    if (state.activeMs >= thresholds[7] && state.lastTriggeredThreshold < 7) {
       state.lastTriggeredThreshold = 7;
       state.snoozeUntil = 0;
       persist(true);
       emitReminder(7);
       return;
     }
-    if (state.lastTriggeredThreshold < 5 && state.activeMs >= SCREEN_TIME_THRESHOLDS[5]) {
+    if (state.lastTriggeredThreshold < 5 && state.activeMs >= thresholds[5]) {
       state.lastTriggeredThreshold = 5;
       state.snoozeUntil = 0;
       persist(true);
       emitReminder(5);
       return;
     }
-    if (state.lastTriggeredThreshold === 5 && state.snoozeUntil && nowWall >= state.snoozeUntil && state.activeMs >= SCREEN_TIME_THRESHOLDS[5]) {
+    if (state.lastTriggeredThreshold === 5 && state.snoozeUntil && nowWall >= state.snoozeUntil && state.activeMs >= thresholds[5]) {
       state.snoozeUntil = 0;
       persist(true);
       emitReminder(5, true);
       return;
     }
-    if (state.lastTriggeredThreshold < 3 && state.activeMs >= SCREEN_TIME_THRESHOLDS[3]) {
+    if (state.lastTriggeredThreshold < 3 && state.activeMs >= thresholds[3]) {
       state.lastTriggeredThreshold = 3;
       persist(true);
       emitReminder(3);
@@ -217,6 +238,12 @@ export function createScreenTimeTracker({
 }
 
 const reminderCopy = {
+  3: {
+    image: "/assets/screen-time/3hours.png",
+    title: "Waktunya istirahat sejenak",
+    body: "Istirahatkan mata dan tubuhmu sebentar, atau lanjutkan jika masih perlu.",
+    alt: "Karakter mengingatkan untuk beristirahat",
+  },
   5: {
     image: "/assets/screen-time/5hours.png",
     title: "Saatnya istirahat sejenak",
@@ -229,45 +256,127 @@ const reminderCopy = {
     body: "Kamu telah aktif cukup lama hari ini. Pertimbangkan untuk menjauh dari layar dan beristirahat.",
     alt: "Karakter menangis mengingatkan agar beristirahat setelah tujuh jam",
   },
+  12: {
+    image: "/assets/screen-time/12hours.jpg",
+    title: "Pengingat terakhir — tutup web sekarang",
+    body: "Waktu layar hari ini sudah sangat panjang. Web akan mencoba menutup otomatis dalam 5 detik; notifikasi sistem hanya muncul jika izin browser aktif.",
+    alt: "Karakter marah mengingatkan agar segera berhenti menggunakan layar",
+  },
 };
 
-/** Mounts a non-blocking 3h status and an accessible 5h/7h modal. */
-export function mountScreenTimeUI({ tracker, documentRef = globalThis.document } = {}) {
+/** Mounts the centered level-3/5/7/12 reminders with focus management. */
+export function mountScreenTimeUI({ tracker, documentRef = globalThis.document, windowRef = globalThis.window } = {}) {
   if (!documentRef?.body) return { show() {}, destroy() {} };
   const root = documentRef.createElement("div");
   root.className = "screen-time-root";
   root.innerHTML = `
-    <div class="screen-time-toast" data-screen-toast role="status" aria-live="polite" aria-atomic="true" hidden>
-      <img src="/assets/screen-time/3hours.png" alt="" width="74" height="74" />
-      <div class="screen-time-toast__copy"><strong>Waktunya jeda sebentar</strong><span>Kamu sudah aktif selama 3 jam hari ini. Istirahatkan mata sejenak.</span></div>
-      <button type="button" class="screen-time-close" data-screen-dismiss aria-label="Tutup pengingat">×</button>
-    </div>
     <div class="screen-time-overlay" data-screen-overlay hidden>
       <section class="screen-time-dialog" data-screen-dialog role="dialog" aria-modal="true" aria-labelledby="screen-time-title" aria-describedby="screen-time-description" tabindex="-1">
         <img class="screen-time-dialog__image" data-screen-image src="" alt="" width="168" height="168" />
         <p class="screen-time-eyebrow" data-screen-eyebrow>Pengingat waktu layar</p>
         <h2 id="screen-time-title" data-screen-title></h2>
         <p id="screen-time-description" class="screen-time-description" data-screen-description></p>
+        <p class="screen-time-countdown" data-screen-countdown aria-live="polite" hidden></p>
         <div class="screen-time-actions" data-screen-actions></div>
       </section>
     </div>`;
   documentRef.body.appendChild(root);
-  const toast = root.querySelector("[data-screen-toast]");
   const overlay = root.querySelector("[data-screen-overlay]");
   const dialog = root.querySelector("[data-screen-dialog]");
   const image = root.querySelector("[data-screen-image]");
   const title = root.querySelector("[data-screen-title]");
   const description = root.querySelector("[data-screen-description]");
   const eyebrow = root.querySelector("[data-screen-eyebrow]");
+  const countdown = root.querySelector("[data-screen-countdown]");
   const actions = root.querySelector("[data-screen-actions]");
   let returnFocus = null;
   let open = false;
-  let toastTimer = null;
+  let continueTimer = null;
+  let autoCloseTimer = null;
+
+  const setEverySecond = (callback) => windowRef?.setInterval ? windowRef.setInterval(callback, 1_000) : globalThis.setInterval(callback, 1_000);
+  const clearTimer = (timer) => {
+    if (timer === null) return;
+    if (windowRef?.clearInterval) windowRef.clearInterval(timer);
+    else globalThis.clearInterval(timer);
+  };
+  const clearCountdownTimers = () => {
+    clearTimer(continueTimer);
+    clearTimer(autoCloseTimer);
+    continueTimer = null;
+    autoCloseTimer = null;
+  };
+  const formatCountdown = (totalSeconds) => {
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  };
+  const showSleepNotification = async (requestPermission) => {
+    const NotificationApi = windowRef?.Notification;
+    if (!NotificationApi) return "unsupported";
+    let permission = NotificationApi.permission || "default";
+    if (permission === "default" && requestPermission && typeof NotificationApi.requestPermission === "function") {
+      try { permission = await NotificationApi.requestPermission(); } catch { permission = "error"; }
+    }
+    if (permission !== "granted") return permission;
+    const message = "get some sleep, Love you 💖";
+    const options = { body: message, icon: "/assets/screen-time/12hours.jpg", tag: "iln-screen-time-final", renotify: false };
+    try {
+      const registration = await windowRef?.ilnScreenTimeServiceWorker;
+      if (typeof registration?.showNotification === "function") {
+        await registration.showNotification("iLoveNime", options);
+        return "shown";
+      }
+      new NotificationApi("iLoveNime", options);
+      return "shown";
+    } catch {
+      try { new NotificationApi("iLoveNime", options); return "shown"; }
+      catch { return "error"; }
+    }
+  };
+  const closeWebsite = async ({ automatic = false } = {}) => {
+    clearCountdownTimers();
+    tracker?.dismiss();
+    const closeButton = actions.querySelector('[data-screen-action="close-website"]');
+    if (closeButton) closeButton.disabled = true;
+    const notificationStatus = await showSleepNotification(!automatic);
+    if (countdown) {
+      countdown.hidden = false;
+      countdown.textContent = "Mencoba menutup web…";
+    }
+    let closeAttempted = false;
+    try {
+      if (typeof windowRef?.close === "function") {
+        closeAttempted = true;
+        windowRef.close();
+      }
+    } catch { /* Browser policy may reject closing a tab the site did not open. */ }
+    const showFallback = () => {
+      if (closeAttempted && windowRef.closed) return;
+      const notificationMessage = notificationStatus === "shown"
+        ? "Notifikasi perangkat sudah dikirim."
+        : "Notifikasi perangkat tidak tampil; izin browser mungkin belum diberikan.";
+      description.textContent = `Browser tidak mengizinkan situs menutup tab ini. Tutup tab secara manual. ${notificationMessage}`;
+      if (countdown) {
+        countdown.hidden = false;
+        countdown.textContent = "Penutupan otomatis diblokir browser.";
+      }
+      if (closeButton) {
+        closeButton.disabled = false;
+        closeButton.focus();
+      }
+    };
+    if (windowRef?.setTimeout) windowRef.setTimeout(showFallback, 350);
+    else globalThis.setTimeout(showFallback, 350);
+  };
 
   const closeDialog = () => {
     if (!open) return;
     open = false;
+    clearCountdownTimers();
     overlay.hidden = true;
+    countdown.hidden = true;
+    countdown.textContent = "";
     actions.replaceChildren();
     const target = returnFocus;
     returnFocus = null;
@@ -281,61 +390,105 @@ export function mountScreenTimeUI({ tracker, documentRef = globalThis.document }
     node.textContent = label;
     return node;
   };
-  const showDialog = (hours) => {
+  const formatActiveTime = (activeMs) => {
+    const hours = Math.floor(Math.max(0, Number(activeMs) || 0) / 3_600_000);
+    const minutes = Math.floor((Math.max(0, Number(activeMs) || 0) % 3_600_000) / 60_000);
+    return hours ? `${hours} jam` : minutes ? `${minutes} menit` : "kurang dari 1 menit";
+  };
+  const startContinueCountdown = (continueButton, seconds) => {
+    let remaining = seconds;
+    countdown.hidden = false;
+    const render = () => {
+      if (remaining <= 0) {
+        continueButton.disabled = false;
+        continueButton.textContent = "Lanjutkan";
+        countdown.textContent = "Waktu istirahat selesai. Kamu dapat melanjutkan sekarang.";
+        clearTimer(continueTimer);
+        continueTimer = null;
+        return;
+      }
+      continueButton.disabled = true;
+      continueButton.textContent = `Lanjutkan (${formatCountdown(remaining)})`;
+      if (remaining === seconds) countdown.textContent = `Tombol Lanjutkan terbuka dalam ${formatCountdown(seconds)}. Istirahat sejenak dulu.`;
+    };
+    render();
+    continueTimer = setEverySecond(() => { remaining -= 1; render(); });
+  };
+  const startFinalCountdown = () => {
+    let remaining = 5;
+    countdown.hidden = false;
+    const render = () => {
+      if (remaining <= 0) {
+        clearTimer(autoCloseTimer);
+        autoCloseTimer = null;
+        countdown.textContent = "Mencoba menutup web…";
+        void closeWebsite({ automatic: true });
+        return;
+      }
+      countdown.textContent = `Web akan ditutup otomatis dalam ${formatCountdown(remaining)}.`;
+    };
+    render();
+    autoCloseTimer = setEverySecond(() => { remaining -= 1; render(); });
+  };
+  const showDialog = (hours, activeMs = 0) => {
     const copy = reminderCopy[hours];
     if (!copy) return;
+    clearCountdownTimers();
     if (!open) returnFocus = documentRef.activeElement;
     open = true;
+    dialog.dataset.thresholdHours = String(hours);
     image.src = copy.image;
     image.alt = copy.alt;
     title.textContent = copy.title;
     description.textContent = copy.body;
-    eyebrow.textContent = `${hours} jam aktif hari ini`;
+    eyebrow.textContent = `${formatActiveTime(activeMs)} aktif hari ini`;
+    countdown.hidden = true;
+    countdown.textContent = "";
     actions.replaceChildren();
-    if (hours === 5) {
-      actions.append(
-        button("Istirahat sekarang", "dismiss", true),
-        button("Lanjutkan 30 menit", "snooze"),
-        button("Tutup", "dismiss"),
-      );
+    if (hours === 3) {
+      const continueButton = button("Lanjutkan", "dismiss", true);
+      actions.append(button("Tutup web", "close-website"), continueButton);
+    } else if (hours === 5 || hours === 7) {
+      const continueButton = button("Lanjutkan", "dismiss", true);
+      actions.append(button("Tutup web", "close-website"), continueButton);
+      startContinueCountdown(continueButton, hours === 5 ? 3 * 60 : 10 * 60);
+    } else if (hours === 12) {
+      actions.append(button("Tutup web", "close-website", true));
+      startFinalCountdown();
     } else {
-      actions.append(button("Saya akan beristirahat", "dismiss", true));
+      actions.append(button("Tutup web", "close-website"), button("Lanjutkan", "dismiss", true));
     }
     overlay.hidden = false;
-    actions.querySelector("button")?.focus();
+    if (hours === 5 || hours === 7) dialog.focus();
+    else if (hours === 3) actions.querySelector('[data-screen-action="dismiss"]')?.focus();
+    else actions.querySelector("button")?.focus();
   };
-  const show = ({ thresholdHours } = {}) => {
-    if (thresholdHours === 3) {
-      clearTimeout(toastTimer);
-      toast.hidden = false;
-      toastTimer = setTimeout(() => { toast.hidden = true; }, 15_000);
-    } else if (thresholdHours === 5 || thresholdHours === 7) {
-      showDialog(thresholdHours);
-    }
+  const show = ({ thresholdHours, activeMs } = {}) => {
+    if (thresholdHours === 3 || thresholdHours === 5 || thresholdHours === 7 || thresholdHours === 12) showDialog(thresholdHours, activeMs);
   };
   root.addEventListener("click", (event) => {
     const action = event.target.closest?.("[data-screen-action]")?.dataset.screenAction;
-    if (action === "snooze") {
+    if (action === "close-website") {
+      void closeWebsite();
+    } else if (action === "snooze") {
       tracker?.snooze(30);
       closeDialog();
     } else if (action === "dismiss") {
       tracker?.dismiss();
       closeDialog();
-    } else if (event.target.closest?.("[data-screen-dismiss]")) {
-      toast.hidden = true;
-      clearTimeout(toastTimer);
     }
   });
   dialog.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       event.stopPropagation();
-      if (Number(eyebrow.textContent.split(" ")[0]) === 5) {
+      const thresholdHours = Number(dialog.dataset.thresholdHours);
+      if (thresholdHours === 3) {
         event.preventDefault();
         tracker?.dismiss();
         closeDialog();
       } else {
         event.preventDefault();
-        actions.querySelector("button")?.focus();
+        actions.querySelector("button:not([disabled])")?.focus();
       }
       return;
     }
@@ -343,10 +496,10 @@ export function mountScreenTimeUI({ tracker, documentRef = globalThis.document }
     const focusable = [...dialog.querySelectorAll("button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])")];
     if (!focusable.length) { event.preventDefault(); dialog.focus(); return; }
     const first = focusable[0], last = focusable.at(-1);
-    if (event.shiftKey && documentRef.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && documentRef.activeElement === last) { event.preventDefault(); first.focus(); }
+    if (event.shiftKey && (documentRef.activeElement === first || documentRef.activeElement === dialog)) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && (documentRef.activeElement === last || documentRef.activeElement === dialog)) { event.preventDefault(); first.focus(); }
   });
   root.show = show;
-  root.destroy = () => { clearTimeout(toastTimer); closeDialog(); root.remove(); };
+  root.destroy = () => { clearCountdownTimers(); closeDialog(); root.remove(); };
   return root;
 }

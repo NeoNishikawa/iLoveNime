@@ -9,6 +9,8 @@ const referenceApp = fs.readFileSync(path.join(__dirname, "../public/js/referenc
 const apiSource = fs.readFileSync(path.join(__dirname, "../public/js/api.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(__dirname, "../public/index.html"), "utf8");
 const screenTimeSource = fs.readFileSync(path.join(__dirname, "../public/js/screen-time.js"), "utf8");
+const screenTimeCss = fs.readFileSync(path.join(__dirname, "../public/css/screen-time.css"), "utf8");
+const serviceWorkerSource = fs.readFileSync(path.join(__dirname, "../public/sw.js"), "utf8");
 test.before(async () => {
   const source = fs.readFileSync(path.join(__dirname, "../public/js/view.js"), "utf8");
   view = await import(`data:text/javascript,${encodeURIComponent(source)}`);
@@ -75,9 +77,24 @@ test("countdown dinonaktifkan agar tidak membuat timer atau refresh berulang", (
 
 test("pengingat screen-time accessible, lokal, dan tidak mengendalikan iframe/PiP", () => {
   assert.match(screenTimeSource, /role="dialog" aria-modal="true" aria-labelledby=/);
-  assert.match(screenTimeSource, /aria-live="polite"/);
-  assert.match(screenTimeSource, /if \(thresholdHours === 3\) \{[\s\S]*?toast\.hidden = false;/);
-  assert.match(screenTimeSource, /else if \(thresholdHours === 5 \|\| thresholdHours === 7\) \{\s*showDialog\(thresholdHours\)/);
+  assert.match(screenTimeSource, /if \(thresholdHours === 3 \|\| thresholdHours === 5 \|\| thresholdHours === 7 \|\| thresholdHours === 12\) showDialog\(thresholdHours, activeMs\)/);
+  assert.match(screenTimeSource, /testMode && state\.activeMs >= thresholds\[3\][\s\S]*?emitReminder\(12\)/);
+  assert.match(screenTimeSource, /intervalMs = testMode \? 1_000 : SCHEDULER_MS/);
+  assert.match(screenTimeSource, /const continueButton = button\("Lanjutkan", "dismiss", true\);\s*actions\.append\(button\("Tutup web", "close-website"\), continueButton\)/);
+  assert.match(screenTimeSource, /windowRef\.close\(\)/);
+  assert.match(screenTimeSource, /Browser tidak mengizinkan situs menutup tab ini/);
+  assert.match(screenTimeSource, /eyebrow\.textContent = `\$\{formatActiveTime\(activeMs\)\} aktif hari ini`/);
+  assert.match(screenTimeSource, /hours === 5 \? 3 \* 60 : 10 \* 60/);
+  assert.match(screenTimeSource, /let remaining = 5/);
+  assert.match(screenTimeSource, /if \(hours === 12\) \{\s*actions\.append\(button\("Tutup web", "close-website", true\)\);\s*startFinalCountdown\(\);/);
+  assert.doesNotMatch(screenTimeSource.match(/else if \(hours === 12\) \{([\s\S]*?)\n    \}/)?.[1] || "", /Lanjutkan/);
+  assert.match(screenTimeSource, /NotificationApi\.requestPermission\(\)/);
+  assert.match(screenTimeSource, /get some sleep, Love you 💖/);
+  assert.match(screenTimeSource, /registration\.showNotification\("iLoveNime", options\)/);
+  assert.match(referenceApp, /serviceWorker\.register\("\/sw\.js"\)/);
+  assert.match(serviceWorkerSource, /event\.notification\.close\(\)/);
+  assert.ok(fs.existsSync(path.join(__dirname, "../public/assets/screen-time/12hours.jpg")));
+  assert.match(screenTimeCss, /\.screen-time-overlay\{position:fixed;inset:0;z-index:590;display:grid;place-items:center/);
   assert.match(screenTimeSource, /querySelectorAll\("button:not\(\[disabled\]\)/);
   assert.match(screenTimeSource, /event\.stopPropagation\(\)/);
   assert.match(referenceApp, /createScreenTimeTracker/);

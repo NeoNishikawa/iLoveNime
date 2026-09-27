@@ -20,7 +20,7 @@ class MemoryStorage {
   getItem(key) { return this.data.has(key) ? this.data.get(key) : null; }
   setItem(key, value) { this.data.set(key, String(value)); }
 }
-function harness(initialState = null) {
+function harness(initialState = null, trackerOptions = {}) {
   let perf = 0;
   let wall = 20_000 * 86_400_000 + 12 * 3_600_000;
   const doc = new EventHub();
@@ -41,6 +41,8 @@ function harness(initialState = null) {
     scheduler,
     dateKey: (epoch) => `day-${Math.floor(epoch / 86_400_000)}`,
     onReminder: (reminder) => reminders.push(reminder),
+    testMode: trackerOptions.testMode ?? screenTime.SCREEN_TIME_TEST_MODE,
+    thresholds: trackerOptions.thresholds ?? screenTime.SCREEN_TIME_THRESHOLDS,
   });
   const advance = (ms, { activity = false, tick = true } = {}) => {
     perf += ms;
@@ -99,31 +101,33 @@ test("idle lebih dari lima menit hanya menghitung sampai batas idle lalu pulih p
   h.tracker.stop();
 });
 
-test("ambang uji sementara satu menit memunculkan reminder level 3", () => {
+test("ambang uji sementara satu menit memunculkan alert final level 12 tanpa lanjut", () => {
+  assert.equal(screenTime.SCREEN_TIME_TEST_MODE, true);
   assert.equal(screenTime.SCREEN_TIME_THRESHOLDS[3], 60_000);
+  assert.deepEqual(screenTime.SCREEN_TIME_PRODUCTION_THRESHOLDS, { 3: 10_800_000, 5: 18_000_000, 7: 25_200_000, 12: 43_200_000 });
   const h = harness();
   h.tracker.start();
   h.runActiveMinutes(1);
-  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3]);
-  assert.equal(h.tracker.getState().lastTriggeredThreshold, 3);
+  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [12]);
+  assert.equal(h.tracker.getState().lastTriggeredThreshold, 12);
   h.advance(60_000, { activity: true });
-  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3]);
+  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [12]);
   h.tracker.stop();
 });
 
-test("tiga ambang 3/5/7 jam masing-masing hanya muncul sekali per hari", () => {
-  const h = harness();
+test("ambang 3/5/7/12 muncul berurutan satu kali saat test mode dimatikan", () => {
+  const h = harness(null, { testMode: false, thresholds: { 3: 60_000, 5: 120_000, 7: 180_000, 12: 240_000 } });
   h.tracker.start();
-  h.runActiveMinutes(7 * 60);
-  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3, 5, 7]);
+  h.runActiveMinutes(4);
+  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3, 5, 7, 12]);
   for (let i = 0; i < 5; i += 1) h.advance(60_000, { activity: true });
-  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3, 5, 7]);
-  assert.equal(h.tracker.getState().lastTriggeredThreshold, 7);
+  assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3, 5, 7, 12]);
+  assert.equal(h.tracker.getState().lastTriggeredThreshold, 12);
   h.tracker.stop();
 });
 
 test("reload pada tanggal yang sama mempertahankan active time dan tidak mengulang ambang", () => {
-  const h = harness();
+  const h = harness(null, { testMode: false, thresholds: screenTime.SCREEN_TIME_PRODUCTION_THRESHOLDS });
   h.tracker.start();
   h.runActiveMinutes(180);
   assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3]);
@@ -133,6 +137,8 @@ test("reload pada tanggal yang sama mempertahankan active time dan tidak mengula
     scheduler: { setInterval: () => 2, clearInterval() {} },
     dateKey: (epoch) => `day-${Math.floor(epoch / 86_400_000)}`,
     onReminder: (reminder) => h.reminders.push(reminder),
+    testMode: false,
+    thresholds: screenTime.SCREEN_TIME_PRODUCTION_THRESHOLDS,
   });
   restored.start();
   restored.tick();
@@ -165,7 +171,7 @@ test("storage korup tidak membuat tracker gagal start atau menyimpan state", () 
 });
 
 test("snooze 30 menit menjadwalkan ulang hanya pengingat 5 jam", () => {
-  const h = harness();
+  const h = harness(null, { testMode: false, thresholds: screenTime.SCREEN_TIME_PRODUCTION_THRESHOLDS });
   h.tracker.start();
   h.runActiveMinutes(300);
   assert.deepEqual(h.reminders.map((item) => item.thresholdHours), [3, 5]);

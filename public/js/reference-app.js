@@ -24,6 +24,11 @@ screenTimeUI = mountScreenTimeUI({ tracker: screenTimeTracker, documentRef: docu
 screenTimeTracker.start();
 const performanceController = createPerformanceController({ storage: localStorage, documentRef: document, navigatorRef: navigator });
 window.ilnPerformanceController = performanceController;
+if ("serviceWorker" in navigator && window.isSecureContext) {
+  window.ilnScreenTimeServiceWorker = navigator.serviceWorker.register("/sw.js")
+    .then(() => navigator.serviceWorker.ready)
+    .catch(() => null);
+}
 
 /* ---------- Drawer mobile ---------- */
 const sidebar = $("#sidebar");
