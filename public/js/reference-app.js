@@ -345,12 +345,34 @@ function bindDropdown(root) { if (!root) return; const key = root.dataset.filter
 function bindGenre(root) { if (!root) return; attach(root); const panel = $(".gf-panel", root); const storage = root.classList.contains("gf-storage"); const set = storage ? state.storageGenres : state.mainGenres; const genres = [...new Map([...GENRE_OPTIONS, ...state.genres].map((g) => [g.slug, g])).values()]; $(".gf-grid", root).innerHTML = genres.map((g) => `<button class="gf-chip ${set.has(g.slug) ? "on" : ""}" data-genre="${esc(g.slug)}">${esc(g.name)}</button>`).join(""); updateFilterLabel(root, set, "All Genre"); $$('[data-genre]', panel).forEach((b) => b.onclick = () => { set.has(b.dataset.genre) ? set.delete(b.dataset.genre) : set.add(b.dataset.genre); b.classList.toggle("on", set.has(b.dataset.genre)); updateFilterLabel(root, set, "All Genre"); storage ? refreshStorageFilters() : renderSearch(); }); $(`[data-gf-clear]`, root).onclick = () => { set.clear(); updateFilterLabel(root, set, "All Genre"); $$("[data-genre]", panel).forEach((b) => b.classList.remove("on")); storage ? refreshStorageFilters() : renderSearch(); }; }
 function scrollToSection(selector, button) { const target = $(selector); if (!target) return; $("#mainScroll").scrollTo({ top: target.offsetTop - 20, behavior: "smooth" }); $$(".nav-item[data-nav]").forEach((b) => b.classList.toggle("active", b === button)); }
 function openAbout() { const root = $("#confirmRoot"); const overlay = document.createElement("div"); overlay.className = "overlay"; overlay.innerHTML = 
-  `<div class="about-modal" role="dialog" aria-modal="true"><h3>Tentang iLoveNime</h3><div class="modal-content">
-  <p>iLoveNime adalah platform streaming anime independen yang dapat diakses secara gratis dan bebas dari iklan.</p>
-  <p>Local Storage menyimpan koleksi dan progres menonton di browser. Gunakan Import dan Export untuk membuat backup mandiri agar data tidak hilang ketika cache dibersihkan.</p>
-  <p>Ketersediaan source dan mirror dapat berubah mengikuti kondisi jaringan. saya menyediakan beberapa mirror untuk membantu pengalaman menonton.</p>
-  <p>Dan saya meminta maaf jika web nya terkadang berganti link secara terus menerus, itu di karenakan saya harus berganti akun hosting setiap 1 bulan sekali untuk menekan biaya hosting, saya meminta maaf untuk ketidaknyamanannya, dan saya juga meminta maaf jika ada beberapa miror yang tidak bekerja, sekian Terima Kasih :)</p>
-  </div><div class="confirm-actions"><button class="btn btn-primary" data-close-about>Tutup</button></div></div>`; root.appendChild(overlay); $("[data-close-about]", overlay).onclick = () => overlay.remove(); overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); }; }
+  `<div class="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
+  <h3 id="about-modal-title">Tentang iLoveNime</h3>
+  
+  <div class="modal-content">
+    <p><strong>iLoveNime</strong> adalah platform streaming anime independen yang dapat diakses secara gratis dan bebas dari iklan.</p>
+    
+    <hr class="modal-divider" />
+
+    <div class="about-section">
+      <h4>📌 Penting Mengenai Data &amp; Progres</h4>
+      <p>Koleksi dan progres menonton Anda disimpan secara lokal di browser (<em>Local Storage</em>). Karena domain berganti secara berkala, pastikan untuk menggunakan fitur <strong>Export</strong> untuk mencadangkan data, dan <strong>Import</strong> di domain baru agar progres tidak hilang.</p>
+    </div>
+
+    <div class="about-section">
+      <h4>🌐 Server &amp; Pergantian Domain</h4>
+      <p>Ketersediaan <em>source</em> dan <em>mirror</em> dapat berubah mengikuti kondisi jaringan. Kami memohon maaf jika alamat web harus berganti link setiap bulannya demi menekan biaya operasional hosting agar layanan tetap gratis.</p>
+    </div>
+
+    <div class="about-notice-box">
+      <p>⏳ <strong>Jadwal Maintenance &amp; Hitung Mundur:</strong><br>
+      Anda dapat memantau waktu tersisa sebelum domain berganti dan jadwal pemeliharaan (*maintenance*) rutin melalui widget <em>countdown</em> di bagian **bawah sidebar**.</p>
+    </div>
+  </div>
+
+  <div class="confirm-actions">
+    <button class="btn btn-primary" data-close-about>Tutup</button>
+  </div>
+</div>`; root.appendChild(overlay); $("[data-close-about]", overlay).onclick = () => overlay.remove(); overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); }; }
 function bindSelect(id, key, render) { const el = $(id); if (!el) return; el.value = state[key] || ""; el.onchange = () => { state[key] = el.value; render(); }; }
 function setup() {
   document.addEventListener("click", (event) => { const detail = event.target.closest?.('[data-act="detail"]'); const add = event.target.closest?.('[data-act="add"]'); const check = event.target.closest?.('[data-act="check"]'); const remove = event.target.closest?.('[data-act="remove"]'); if (detail) { event.preventDefault(); event.stopPropagation(); openDetail(detail.dataset.id); } else if (add) { event.preventDefault(); event.stopPropagation(); addStorage(add.dataset.id); } else if (check) { event.preventDefault(); event.stopPropagation(); const id = check.dataset.id; state.selectedStorageItems.has(id) ? state.selectedStorageItems.delete(id) : state.selectedStorageItems.add(id); renderStorage(); } else if (remove) { /* Hold selesai memicu removeStorage sendiri (holdDone);
