@@ -6,6 +6,7 @@ const path = require("node:path");
 let view;
 const componentsCss = fs.readFileSync(path.join(__dirname, "../public/css/components.css"), "utf8");
 const referenceApp = fs.readFileSync(path.join(__dirname, "../public/js/reference-app.js"), "utf8");
+const apiSource = fs.readFileSync(path.join(__dirname, "../public/js/api.js"), "utf8");
 const indexHtml = fs.readFileSync(path.join(__dirname, "../public/index.html"), "utf8");
 test.before(async () => {
   const source = fs.readFileSync(path.join(__dirname, "../public/js/view.js"), "utf8");
@@ -57,6 +58,13 @@ test("PiP dapat dipindahkan dengan pointer tanpa mengganggu iframe", () => {
   assert.match(referenceApp, /sessionStorage\.setItem\("iln:pip-position"/);
   assert.match(componentsCss, /touch-action:none/);
   assert.match(componentsCss, /\.pip-window\.is-dragging \.pip-head\{cursor:grabbing/);
+});
+
+test("Search memiliki retry HTTP-aware dan indikator loading retry", () => {
+  assert.match(apiSource, /function retryableStatus\(status\)/);
+  assert.match(apiSource, /requestWithRetry\(/);
+  assert.match(apiSource, /iln:catalog-retry/);
+  assert.match(referenceApp, /Retrying search/);
 });
 
 test("countdown dinonaktifkan agar tidak membuat timer atau refresh berulang", () => {

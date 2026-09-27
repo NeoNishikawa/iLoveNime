@@ -3,7 +3,7 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const path = require("path");
 const fs = require("fs");
-const { ANIMASU_BASE_URL, PORT, REQUEST_TIMEOUT_MS, SEARCH_BUDGET_MS, DAILY_CACHE_MS, DETAIL_CACHE_MS, STREAM_CACHE_MS, MAX_UPSTREAM_CONCURRENCY, UPSTREAM_MIN_INTERVAL_MS, SOURCE_BLOCK_COOLDOWN_MS } = require("./settings");
+const { ANIMASU_BASE_URL, PORT, REQUEST_TIMEOUT_MS, SEARCH_BUDGET_MS, DAILY_CACHE_MS, DETAIL_CACHE_MS, STREAM_CACHE_MS, MAX_UPSTREAM_CONCURRENCY, SEARCH_UPSTREAM_CONCURRENCY, UPSTREAM_MIN_INTERVAL_MS, SEARCH_UPSTREAM_MIN_INTERVAL_MS, SEARCH_RETRY_COUNT, SEARCH_RETRY_BACKOFF_MS, SOURCE_BLOCK_COOLDOWN_MS } = require("./settings");
 
 process.env.ANIMASU_BASE_URL = ANIMASU_BASE_URL;
 const { animasu } = require("yaoi");
@@ -16,7 +16,9 @@ const staleKeys = new Set();
 const CACHE_MS = 75_000;
 const upstreamQueue = [];
 let upstreamActive = 0;
+const upstreamActiveByLane = new Map();
 const upstreamLastStarted = new Map();
+const upstreamLastStartedByLane = new Map();
 const upstreamCooldownUntil = new Map();
 let upstreamDrainTimer = null;
 const MAX_CACHE_ENTRIES = Number(process.env.MAX_CACHE_ENTRIES) > 0 ? Number(process.env.MAX_CACHE_ENTRIES) : 64;
@@ -244,10 +246,10 @@ function isBlockedSourceHtml(html) {
 function getSourceConfig(provider = "animasu") {
   return SOURCE_CONFIGS.find((source) => source.id === provider) || SOURCE_CONFIGS[0];
 }
-async function sourceRequestFor(provider, pathname, options = {}) {
+async function sourceRequestFor(provider, pathname, options = {}, lane = "default") {
   const source = getSourceConfig(provider);
   try {
-    const result = await upstreamGet(new URL(pathname, source.baseUrl).toString(), options);
+    const result = await upstreamGet(new URL(pathname, source.baseUrl).toString(), options, lane);
     if (result.status < 200 || result.status >= 300) {
       const error = new Error(`${source.id} HTTP ${result.status}`);
       error.sourceBlocked = result.status === 403 || result.status === 429;
@@ -268,8 +270,8 @@ async function sourceRequestFor(provider, pathname, options = {}) {
     throw error;
   }
 }
-async function sourceRequest(pathname, options = {}) {
-  const { result, source } = await sourceRequestFor("animasu", pathname, options);
+async function sourceRequest(pathname, options = {}, lane = "default") {
+  const { result, source } = await sourceRequestFor("animasu", pathname, options, lane);
   return { result, baseUrl: source.baseUrl };
 }
 function originFor(url) {
@@ -279,37 +281,80 @@ function scheduleUpstreamDrain(delayMs) {
   if (upstreamDrainTimer) return;
   upstreamDrainTimer = setTimeout(() => { upstreamDrainTimer = null; drainUpstreamQueue(); }, Math.max(0, delayMs));
 }
+function laneLimit(lane) { return lane === "search" ? SEARCH_UPSTREAM_CONCURRENCY : MAX_UPSTREAM_CONCURRENCY; }
+function laneInterval(lane) { return lane === "search" ? SEARCH_UPSTREAM_MIN_INTERVAL_MS : UPSTREAM_MIN_INTERVAL_MS; }
+function laneOriginKey(lane, origin) { return `${lane}:${origin}`; }
 function drainUpstreamQueue() {
-  while (upstreamActive < MAX_UPSTREAM_CONCURRENCY && upstreamQueue.length) {
-    const request = upstreamQueue[0];
-    if (request.options.signal?.aborted) { upstreamQueue.shift().reject(new Error("Upstream request dibatalkan oleh client.")); continue; }
-    const origin = request.origin;
+  let nextDelay = Infinity;
+  while (upstreamQueue.length) {
     const now = Date.now();
-    const cooldown = upstreamCooldownUntil.get(origin) || 0;
-    if (cooldown > now) { scheduleUpstreamDrain(cooldown - now); return; }
-    const nextAllowed = (upstreamLastStarted.get(origin) || 0) + UPSTREAM_MIN_INTERVAL_MS;
-    if (nextAllowed > now) { scheduleUpstreamDrain(nextAllowed - now); return; }
-    upstreamQueue.shift();
-    upstreamLastStarted.set(origin, now);
+    let selectedIndex = -1;
+    for (let index = 0; index < upstreamQueue.length; index += 1) {
+      const request = upstreamQueue[index];
+      if (request.options.signal?.aborted) { upstreamQueue.splice(index, 1)[0].reject(new Error("Upstream request dibatalkan oleh client.")); index -= 1; continue; }
+      const active = upstreamActiveByLane.get(request.lane) || 0;
+      if (active >= laneLimit(request.lane)) continue;
+      const origin = request.origin;
+      const cooldown = upstreamCooldownUntil.get(origin) || 0;
+      if (cooldown > now) { nextDelay = Math.min(nextDelay, cooldown - now); continue; }
+      const key = laneOriginKey(request.lane, origin);
+      const nextAllowed = (upstreamLastStartedByLane.get(key) || 0) + laneInterval(request.lane);
+      if (nextAllowed > now) { nextDelay = Math.min(nextDelay, nextAllowed - now); continue; }
+      selectedIndex = index;
+      break;
+    }
+    if (selectedIndex < 0) break;
+    const request = upstreamQueue.splice(selectedIndex, 1)[0];
+    const origin = request.origin;
+    const key = laneOriginKey(request.lane, origin);
+    const nowStart = Date.now();
+    upstreamLastStarted.set(origin, nowStart);
+    upstreamLastStartedByLane.set(key, nowStart);
     upstreamActive += 1;
+    upstreamActiveByLane.set(request.lane, (upstreamActiveByLane.get(request.lane) || 0) + 1);
     axios.get(request.url, request.options).then((result) => {
       if (result.status === 403 || result.status === 429) upstreamCooldownUntil.set(origin, Date.now() + SOURCE_BLOCK_COOLDOWN_MS);
       request.resolve(result);
     }, (error) => {
       if (error?.response?.status === 403 || error?.response?.status === 429) upstreamCooldownUntil.set(origin, Date.now() + SOURCE_BLOCK_COOLDOWN_MS);
       request.reject(error);
-    }).finally(() => { upstreamActive -= 1; drainUpstreamQueue(); });
+    }).finally(() => {
+      upstreamActive -= 1;
+      const active = Math.max(0, (upstreamActiveByLane.get(request.lane) || 1) - 1);
+      if (active) upstreamActiveByLane.set(request.lane, active); else upstreamActiveByLane.delete(request.lane);
+      drainUpstreamQueue();
+    });
   }
+  if (Number.isFinite(nextDelay)) scheduleUpstreamDrain(nextDelay);
 }
-function upstreamGet(url, options = {}) {
-  return new Promise((resolve, reject) => { upstreamQueue.push({ url, origin: originFor(url), options, resolve, reject }); drainUpstreamQueue(); });
+function upstreamGet(url, options = {}, lane = "default") {
+  return new Promise((resolve, reject) => { upstreamQueue.push({ url, origin: originFor(url), options, lane, resolve, reject }); drainUpstreamQueue(); });
 }
 function withTimeout(task, timeoutMs, label) {
   let timer;
   const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timeout setelah ${timeoutMs}ms`)), timeoutMs); });
   return Promise.race([Promise.resolve().then(task), timeout]).finally(() => clearTimeout(timer));
 }
-function runtimeStats() { return { cacheEntries: memory.size, pendingKeys: pending.size, upstreamActive, upstreamQueued: upstreamQueue.length, maxUpstreamConcurrency: MAX_UPSTREAM_CONCURRENCY, minIntervalMs: UPSTREAM_MIN_INTERVAL_MS, cooldownMs: SOURCE_BLOCK_COOLDOWN_MS }; }
+function transientUpstreamError(error) {
+  const status = error?.response?.status;
+  return !error?.sourceBlocked && (!status || status === 408 || status === 425 || status === 429 || status >= 500);
+}
+async function withRetry(task, retries, backoffMs, signal) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (signal?.aborted) throw new Error("Pencarian dibatalkan oleh client.");
+    try { return await task(attempt); } catch (error) {
+      lastError = error;
+      if (attempt >= retries || !transientUpstreamError(error)) throw error;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, backoffMs * (attempt + 1));
+        signal?.addEventListener("abort", () => { clearTimeout(timer); reject(new Error("Pencarian dibatalkan oleh client.")); }, { once: true });
+      });
+    }
+  }
+  throw lastError;
+}
+function runtimeStats() { return { cacheEntries: memory.size, pendingKeys: pending.size, upstreamActive, upstreamQueued: upstreamQueue.length, upstreamActiveByLane: Object.fromEntries(upstreamActiveByLane), maxUpstreamConcurrency: MAX_UPSTREAM_CONCURRENCY, searchUpstreamConcurrency: SEARCH_UPSTREAM_CONCURRENCY, minIntervalMs: UPSTREAM_MIN_INTERVAL_MS, searchMinIntervalMs: SEARCH_UPSTREAM_MIN_INTERVAL_MS, cooldownMs: SOURCE_BLOCK_COOLDOWN_MS }; }
 const sourceState = { status: "unknown", sourceId: null, baseUrl: null, lastSuccessAt: null, lastError: null };
 function markSourceSuccess(baseUrl, sourceId = "animasu") { sourceState.status = "up"; sourceState.sourceId = sourceId; sourceState.baseUrl = baseUrl; sourceState.lastSuccessAt = new Date().toISOString(); sourceState.lastError = null; }
 function markSourceFailure(error) { sourceState.status = "down"; sourceState.sourceId = error?.sourceId || sourceState.sourceId; sourceState.lastError = error?.message || String(error); }
@@ -472,7 +517,7 @@ async function fetchCatalogPage({ search = "", genre = "", page = 1, signal }) {
   let reachable = false;
   for (const pathname of paths) {
     try {
-      const { result, baseUrl } = await sourceRequest(pathname, { params: { s: search, halaman: page, urutan: "update", "genre[]": genre ? [genre] : [] }, headers: SOURCE_HEADERS, timeout: REQUEST_TIMEOUT_MS, signal, validateStatus: (status) => status >= 200 && status < 300 });
+      const { result, baseUrl } = await sourceRequest(pathname, { params: { s: search, halaman: page, urutan: "update", "genre[]": genre ? [genre] : [] }, headers: SOURCE_HEADERS, timeout: REQUEST_TIMEOUT_MS, signal, validateStatus: (status) => status >= 200 && status < 300 }, "search");
       reachable = true;
       const diagnostics = parseAnimeCardsWithDiagnostics(result.data);
       if (diagnostics.data.length) return { data: diagnostics.data, hasNext: hasNextPage(result.data), diagnostics, source: baseUrl };
@@ -552,7 +597,11 @@ async function collectCatalog(search, genre, signal) {
       break;
     }
     try {
-      const result = await withTimeout(() => fetchCatalogPage({ search, genre, page, signal }), remaining, "Search");
+      const result = await withRetry(() => {
+        const attemptRemaining = deadline - Date.now();
+        if (attemptRemaining <= 0) throw new Error(`Search timeout setelah ${SEARCH_BUDGET_MS}ms`);
+        return withTimeout(() => fetchCatalogPage({ search, genre, page, signal }), attemptRemaining, "Search");
+      }, SEARCH_RETRY_COUNT, SEARCH_RETRY_BACKOFF_MS, signal);
       const pageData = (result.data || []).filter((item) => !search || matchesTitle(item, search));
       found.push(...pageData);
       if (!result.hasNext || !pageData.length) break;
@@ -567,9 +616,11 @@ async function collectCatalog(search, genre, signal) {
 
 async function searchCatalog(search, genre, signal) {
   const errors = [];
+  let successfulAttempt = false;
   for (const source of SOURCE_CONFIGS) {
     try {
       const direct = await collectCatalog(search, genre, signal, source.id);
+      successfulAttempt = true;
       if (direct.data.length || !search) return { data: direct.data, aliasUsed: "", partial: direct.partial, provider: source.id };
     } catch (error) { errors.push(error); }
   }
@@ -579,11 +630,12 @@ async function searchCatalog(search, genre, signal) {
     for (const source of SOURCE_CONFIGS) {
       try {
         const result = await collectCatalog(alias, genre, signal, source.id);
+        successfulAttempt = true;
         if (result.data.length) return { data: result.data, aliasUsed: alias, partial: result.partial, provider: source.id };
       } catch (error) { errors.push(error); }
     }
   }
-  if (errors.length && !SOURCE_CONFIGS.some((source) => source.id === "animasu")) throw errors.at(-1);
+  if (errors.length && !successfulAttempt) throw errors.at(-1);
   return { data: [], aliasUsed: "", partial: false, provider: "none" };
 }
 

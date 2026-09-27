@@ -129,6 +129,7 @@ function thoughtStage(label, percent) {
   $("[data-thought-progress]", thoughtNode).style.width = `${percent}%`;
   $("[data-thought-percent]", thoughtNode).textContent = Math.round(percent);
 }
+window.addEventListener("iln:catalog-retry", (event) => { if (state.searchLoading) thoughtStage(`Retrying search (${event.detail.attempt})`, 28); });
 function thoughtDone() {
   thoughtStage("Done", 100);
   clearTimeout(thoughtTimer);

@@ -11,6 +11,10 @@ module.exports = {
   STREAM_CACHE_MS: Number(process.env.STREAM_CACHE_MS) > 0 ? Number(process.env.STREAM_CACHE_MS) : 600000,
   // Rate limiting untuk mengurangi beban source; bukan untuk melewati proteksi anti-bot.
   MAX_UPSTREAM_CONCURRENCY: Number(process.env.MAX_UPSTREAM_CONCURRENCY) > 0 ? Number(process.env.MAX_UPSTREAM_CONCURRENCY) : 1,
-  UPSTREAM_MIN_INTERVAL_MS: Number(process.env.UPSTREAM_MIN_INTERVAL_MS) > 0 ? Number(process.env.UPSTREAM_MIN_INTERVAL_MS) : 1500,
+  SEARCH_UPSTREAM_CONCURRENCY: Number(process.env.SEARCH_UPSTREAM_CONCURRENCY) > 0 ? Number(process.env.SEARCH_UPSTREAM_CONCURRENCY) : 2,
+  UPSTREAM_MIN_INTERVAL_MS: Number(process.env.UPSTREAM_MIN_INTERVAL_MS) >= 0 ? Number(process.env.UPSTREAM_MIN_INTERVAL_MS) : 1500,
+  SEARCH_UPSTREAM_MIN_INTERVAL_MS: Number(process.env.SEARCH_UPSTREAM_MIN_INTERVAL_MS) >= 0 ? Number(process.env.SEARCH_UPSTREAM_MIN_INTERVAL_MS) : 500,
+  SEARCH_RETRY_COUNT: Number(process.env.SEARCH_RETRY_COUNT) >= 0 ? Number(process.env.SEARCH_RETRY_COUNT) : 1,
+  SEARCH_RETRY_BACKOFF_MS: Number(process.env.SEARCH_RETRY_BACKOFF_MS) >= 0 ? Number(process.env.SEARCH_RETRY_BACKOFF_MS) : 250,
   SOURCE_BLOCK_COOLDOWN_MS: Number(process.env.SOURCE_BLOCK_COOLDOWN_MS) > 0 ? Number(process.env.SOURCE_BLOCK_COOLDOWN_MS) : 60000,
 };
