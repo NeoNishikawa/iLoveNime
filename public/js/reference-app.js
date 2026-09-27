@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import { attach, closeActive } from "./dropdown.js";
-import { pageSizeFor, pageCountFor, pageSlice, isItemComplete, isAllowedAvatarFile, buildExportPayload, mergeImportedProfile } from "./app-utils.js";
+import { pageSizeFor, pageCountFor, pageSlice, isItemComplete, isAllowedAvatarFile, buildExportPayload, mergeImportedProfile, getCountdownParts } from "./app-utils.js";
+import { COUNTDOWN_TARGETS } from "./countdown-config.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
@@ -344,6 +345,38 @@ const FILTER_OPTIONS = { mainType: [["","Tipe"],["Serial TV","Serial TV"],["Live
 function bindDropdown(root) { if (!root) return; const key = root.dataset.filter; const panel = $(".gf-panel", root); attach(root); const setOptions = () => { $(".gf-grid", root).innerHTML = (FILTER_OPTIONS[key] || []).map(([value,label]) => `<button class="gf-chip ${state[key] === value ? "on" : ""}" data-value="${esc(value)}">${esc(label)}</button>`).join(""); }; setOptions(); $$('[data-value]', panel).forEach((button) => button.onclick = () => { state[key] = button.dataset.value; $(".gf-label", root).textContent = button.textContent; setOptions(); closeActive(); root.closest("[data-filter-scope=storage]") ? refreshStorageFilters() : renderSearch(); }); }
 function bindGenre(root) { if (!root) return; attach(root); const panel = $(".gf-panel", root); const storage = root.classList.contains("gf-storage"); const set = storage ? state.storageGenres : state.mainGenres; const genres = [...new Map([...GENRE_OPTIONS, ...state.genres].map((g) => [g.slug, g])).values()]; $(".gf-grid", root).innerHTML = genres.map((g) => `<button class="gf-chip ${set.has(g.slug) ? "on" : ""}" data-genre="${esc(g.slug)}">${esc(g.name)}</button>`).join(""); updateFilterLabel(root, set, "All Genre"); $$('[data-genre]', panel).forEach((b) => b.onclick = () => { set.has(b.dataset.genre) ? set.delete(b.dataset.genre) : set.add(b.dataset.genre); b.classList.toggle("on", set.has(b.dataset.genre)); updateFilterLabel(root, set, "All Genre"); storage ? refreshStorageFilters() : renderSearch(); }); $(`[data-gf-clear]`, root).onclick = () => { set.clear(); updateFilterLabel(root, set, "All Genre"); $$("[data-genre]", panel).forEach((b) => b.classList.remove("on")); storage ? refreshStorageFilters() : renderSearch(); }; }
 function scrollToSection(selector, button) { const target = $(selector); if (!target) return; $("#mainScroll").scrollTo({ top: target.offsetTop - 20, behavior: "smooth" }); $$(".nav-item[data-nav]").forEach((b) => b.classList.toggle("active", b === button)); }
+function openCountdown() {
+  const root = $("#confirmRoot");
+  const overlay = document.createElement("div");
+  overlay.className = "overlay";
+  overlay.innerHTML = `<div class="about-modal countdown-modal" role="dialog" aria-modal="true" aria-labelledby="countdown-modal-title">
+    <h3 id="countdown-modal-title">Jadwal Penting</h3>
+    <div class="modal-content">
+      <p class="countdown-intro">Hitung mundur ini mengikuti waktu perangkat dan akan diperbarui setiap detik.</p>
+      <div class="countdown-list">
+        <article class="countdown-card" data-countdown="maintenance">
+          <div><strong>Maintenance</strong><span>Persiapan pemeliharaan sistem</span></div>
+          <b class="countdown-value">—</b>
+        </article>
+        <article class="countdown-card" data-countdown="domain">
+          <div><strong>Pergantian Domain</strong><span>Rencana perpindahan alamat website</span></div>
+          <b class="countdown-value">—</b>
+        </article>
+      </div>
+      <p class="countdown-note">Tanggal target diatur oleh publisher di <code>public/js/countdown-config.js</code>.</p>
+    </div>
+    <div class="confirm-actions"><button class="btn btn-primary" data-countdown-close type="button">Tutup</button></div>
+  </div>`;
+  root.appendChild(overlay);
+  const format = (parts) => parts.expired ? "Waktu tiba" : `${parts.days}h ${String(parts.hours).padStart(2, "0")}j ${String(parts.minutes).padStart(2, "0")}m ${String(parts.seconds).padStart(2, "0")}d`;
+  const update = () => overlay.querySelectorAll("[data-countdown]").forEach((card) => { card.querySelector(".countdown-value").textContent = format(getCountdownParts(COUNTDOWN_TARGETS[card.dataset.countdown])); });
+  update();
+  const timer = window.setInterval(update, 1000);
+  const close = () => { window.clearInterval(timer); overlay.remove(); };
+  overlay.querySelector("[data-countdown-close]").onclick = close;
+  overlay.addEventListener("click", (event) => { if (event.target === overlay) close(); });
+}
+
 function openAbout() { const root = $("#confirmRoot"); const overlay = document.createElement("div"); overlay.className = "overlay"; overlay.innerHTML = 
   `<div class="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
   <h3 id="about-modal-title">Tentang iLoveNime</h3>
@@ -444,7 +477,7 @@ function setup() {
   $$(".nav-item[data-nav]").forEach((b) => b.onclick = () => { const map = { dashboard: "#profileSection", update: "#updateSection", storage: "#storageSection" }; scrollToSection(map[b.dataset.nav], b); setDrawer(false); });
   const mainScroll = $("#mainScroll");
   mainScroll?.addEventListener("scroll", () => { const sections = [["#profileSection","dashboard"],["#updateSection","update"],["#storageSection","storage"]]; let active = "dashboard"; for (const [selector, name] of sections) { const el = $(selector); if (el && el.offsetTop - mainScroll.scrollTop < 180) active = name; } $$(".nav-item[data-nav]").forEach((b) => b.classList.toggle("active", b.dataset.nav === active)); }, { passive: true });
-  $$(".nav-item[data-support]").forEach((b) => b.onclick = () => { setDrawer(false); if (b.dataset.support === "about") openAbout(); if (b.dataset.support === "donate") window.open("https://sociabuzz.com/neonishikawa/tribe", "_blank", "noopener"); if (b.dataset.support === "feedback") window.open("https://tally.so/r/7RAZd2", "_blank", "noopener"); });
+  $$(".nav-item[data-support]").forEach((b) => b.onclick = () => { setDrawer(false); if (b.dataset.support === "about") openAbout(); if (b.dataset.support === "donate") window.open("https://sociabuzz.com/neonishikawa/tribe", "_blank", "noopener"); if (b.dataset.support === "feedback") window.open("https://tally.so/r/7RAZd2", "_blank", "noopener"); if (b.dataset.support === "countdown") openCountdown(); });
   $("#profilePopup").addEventListener("click", (e) => { if (e.target === $("#profilePopup")) finishEdit(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!$("#watchOverlay").hidden) closeWatch(); else $("#profilePopup").hidden = true; } });
   [$(".gf-header"), $(".gf-storage")].forEach(bindGenre);

@@ -75,3 +75,29 @@ test("import: profil v2 dipulihkan, v1 tidak mengubah apa pun, URL asing ditolak
   assert.equal(safe.avatarUrl, "");
   assert.equal(safe.username, "Hacked"); /* nama tetap boleh, URL tidak */
 });
+
+/* ---------- Countdown maintenance & domain ---------- */
+test("countdown menghitung sisa hari dan waktu secara konsisten", () => {
+  const now = new Date("2026-09-27T00:00:00Z");
+  assert.deepEqual(utils.getCountdownParts("2026-10-19T00:00:00Z", now), {
+    totalMs: 22 * 24 * 60 * 60 * 1000,
+    days: 22,
+    hours: 0,
+    minutes: 0,
+    seconds: 0,
+    expired: false,
+  });
+});
+
+test("countdown yang sudah lewat dikunci ke nol dan ditandai expired", () => {
+  const parts = utils.getCountdownParts("2026-09-26T00:00:00Z", new Date("2026-09-27T00:00:00Z"));
+  assert.equal(parts.totalMs, 0);
+  assert.equal(parts.expired, true);
+  assert.deepEqual([parts.days, parts.hours, parts.minutes, parts.seconds], [0, 0, 0, 0]);
+});
+
+test("target reset 29 dan 28 hari dapat dibuat dari waktu sekarang", () => {
+  const now = new Date("2026-09-27T00:00:00Z");
+  assert.equal(utils.addDaysToIso(now, 29), "2026-10-26T00:00:00.000Z");
+  assert.equal(utils.addDaysToIso(now, 28), "2026-10-25T00:00:00.000Z");
+});

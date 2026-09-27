@@ -62,3 +62,22 @@ export function mergeImportedProfile(parsed = {}, prefs = {}) {
   if (typeof p.sidebarCollapsed === "boolean") next.sidebarCollapsed = p.sidebarCollapsed;
   return next;
 }
+
+/* ---------- Maintenance / domain countdown ---------- */
+export function getCountdownParts(target, now = new Date()) {
+  const targetMs = new Date(target).getTime();
+  const nowMs = new Date(now).getTime();
+  const totalMs = Number.isFinite(targetMs) && Number.isFinite(nowMs) ? Math.max(0, targetMs - nowMs) : 0;
+  const totalSeconds = Math.floor(totalMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return { totalMs, days, hours, minutes, seconds, expired: totalMs === 0 };
+}
+
+export function addDaysToIso(date = new Date(), days = 0) {
+  const result = new Date(date);
+  result.setDate(result.getDate() + Number(days || 0));
+  return result.toISOString();
+}
