@@ -268,17 +268,19 @@ $("#prevEpBtn")?.addEventListener("click", () => { if (state.episodeIndex > 0) n
 $("#nextEpBtn")?.addEventListener("click", () => { const total = state.detail?.episodes?.length || 0; if (state.episodeIndex < total - 1) navigateEpisode(1); });
 
 /* ---------- Mini popup player (Picture-in-Picture-like) ----------
-   Document PiP bila tersedia (jendela browser asli, tetap tampil di
-   atas semua aplikasi); fallback: window mengambang di halaman.
-   Keduanya membawa iframe yang sama — video tidak pernah berhenti. */
+   Untuk iframe cross-origin, gunakan floating PiP di dokumen yang sama.
+   Memindahkan iframe ke Document PiP lintas window dapat membuat browser
+   me-reparent/reload browsing context dan menimbulkan jeda atau reset waktu.
+   Floating PiP memindahkan node iframe yang sama tanpa mengganti src. */
 let pipPort = null;
+const SEAMLESS_IFRAME_PIP = true;
 async function openPipWindow() {
   const mirror = state.mirrors[state.mirrorIndex];
   if (!mirror || !state.detail) { toast("Belum ada video", "Pilih episode dulu sebelum membuka popup."); return; }
   const iframe = $("#playerBox iframe");
   if (!iframe) { toast("Belum ada video", "Player belum memuat stream."); return; }
   if (document.pictureInPictureElement) { try { await document.exitPictureInPicture(); } catch { } }
-  if ("documentPictureInPicture" in window && window.documentPictureInPicture.requestWindow) {
+  if (!SEAMLESS_IFRAME_PIP && "documentPictureInPicture" in window && window.documentPictureInPicture.requestWindow) {
     try {
       const win = await window.documentPictureInPicture.requestWindow({ width: 480, height: 300 });
       const doc = win.document;

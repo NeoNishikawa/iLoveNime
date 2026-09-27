@@ -42,6 +42,13 @@ test("kontrol video tidak boleh menangkap klik yang seharusnya masuk ke iframe",
   assert.doesNotMatch(referenceApp, /voHotspot\?\.addEventListener\("click"/);
 });
 
+test("PiP iframe memakai handoff seamless tanpa Document PiP lintas window", () => {
+  assert.match(referenceApp, /const SEAMLESS_IFRAME_PIP = true/);
+  assert.match(referenceApp, /if \(!SEAMLESS_IFRAME_PIP && "documentPictureInPicture"/);
+  assert.match(referenceApp, /\.pip-body.*appendChild\(iframe\)/s);
+  assert.doesNotMatch(componentsCss, /\.pip-window\{[^}]*animation:pipIn/s);
+});
+
 test("countdown dinonaktifkan agar tidak membuat timer atau refresh berulang", () => {
   assert.doesNotMatch(indexHtml, /data-support="countdown"/);
   assert.doesNotMatch(referenceApp, /COUNTDOWN_TARGETS|getCountdownParts|openCountdown|setInterval/);

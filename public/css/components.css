@@ -556,7 +556,6 @@
   width:min(420px,calc(100vw - 32px));aspect-ratio:16/9;
   background:#000;border:1px solid var(--border);border-radius:14px;overflow:hidden;
   box-shadow:0 24px 64px rgba(0,0,0,.7);
-  animation:pipIn .3s var(--ease-out);
 }
 .pip-window.is-closing{animation:pipOut .22s ease-in forwards}
 .pip-window .pip-head{
