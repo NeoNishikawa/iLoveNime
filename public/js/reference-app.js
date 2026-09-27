@@ -349,7 +349,7 @@ function openAbout() { const root = $("#confirmRoot"); const overlay = document.
   <p>iLoveNime adalah platform streaming anime independen yang dapat diakses secara gratis dan bebas dari iklan.</p>
   <p>Local Storage menyimpan koleksi dan progres menonton di browser. Gunakan Import dan Export untuk membuat backup mandiri agar data tidak hilang ketika cache dibersihkan.</p>
   <p>Ketersediaan source dan mirror dapat berubah mengikuti kondisi jaringan. saya menyediakan beberapa mirror untuk membantu pengalaman menonton.</p>
-  <p>Dan saya meminta maaf jika web nya terkadang berganti link secara terus menerus, itu di karenakan saya harus berganti akun hosting setiap 1 bulan sekali untuk menekan biaya hosting, saya meminta maaf untuk ketidaknyamanannya, Terima Kasih :)</p>
+  <p>Dan saya meminta maaf jika web nya terkadang berganti link secara terus menerus, itu di karenakan saya harus berganti akun hosting setiap 1 bulan sekali untuk menekan biaya hosting, saya meminta maaf untuk ketidaknyamanannya, dan saya juga meminta maaf jika ada beberapa miror yang tidak bekerja, sekian Terima Kasih :)</p>
   </div><div class="confirm-actions"><button class="btn btn-primary" data-close-about>Tutup</button></div></div>`; root.appendChild(overlay); $("[data-close-about]", overlay).onclick = () => overlay.remove(); overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); }; }
 function bindSelect(id, key, render) { const el = $(id); if (!el) return; el.value = state[key] || ""; el.onchange = () => { state[key] = el.value; render(); }; }
 function setup() {
