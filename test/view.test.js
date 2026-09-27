@@ -49,6 +49,16 @@ test("PiP iframe memakai handoff seamless tanpa Document PiP lintas window", () 
   assert.doesNotMatch(componentsCss, /\.pip-window\{[^}]*animation:pipIn/s);
 });
 
+test("PiP dapat dipindahkan dengan pointer tanpa mengganggu iframe", () => {
+  assert.match(referenceApp, /data-pip-drag-handle/);
+  assert.match(referenceApp, /setPointerCapture/);
+  assert.match(referenceApp, /setPipPosition\(el, event\.clientX - offsetX, event\.clientY - offsetY\)/);
+  assert.match(referenceApp, /window\.innerWidth - rect\.width/);
+  assert.match(referenceApp, /sessionStorage\.setItem\("iln:pip-position"/);
+  assert.match(componentsCss, /touch-action:none/);
+  assert.match(componentsCss, /\.pip-window\.is-dragging \.pip-head\{cursor:grabbing/);
+});
+
 test("countdown dinonaktifkan agar tidak membuat timer atau refresh berulang", () => {
   assert.doesNotMatch(indexHtml, /data-support="countdown"/);
   assert.doesNotMatch(referenceApp, /COUNTDOWN_TARGETS|getCountdownParts|openCountdown|setInterval/);

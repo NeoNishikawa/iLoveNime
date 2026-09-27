@@ -267,13 +267,93 @@ videoOverlay?.addEventListener("click", (event) => {
 $("#prevEpBtn")?.addEventListener("click", () => { if (state.episodeIndex > 0) navigateEpisode(-1); });
 $("#nextEpBtn")?.addEventListener("click", () => { const total = state.detail?.episodes?.length || 0; if (state.episodeIndex < total - 1) navigateEpisode(1); });
 
-/* ---------- Mini popup player (Picture-in-Picture-like) ----------
+/* ---------- Draggable mini popup player (Picture-in-Picture-like) ----------
    Untuk iframe cross-origin, gunakan floating PiP di dokumen yang sama.
    Memindahkan iframe ke Document PiP lintas window dapat membuat browser
    me-reparent/reload browsing context dan menimbulkan jeda atau reset waktu.
    Floating PiP memindahkan node iframe yang sama tanpa mengganti src. */
 let pipPort = null;
+let pipDragCleanup = null;
 const SEAMLESS_IFRAME_PIP = true;
+function clampPipPosition(el, left, top) {
+  const rect = el.getBoundingClientRect();
+  const maxLeft = Math.max(0, window.innerWidth - rect.width);
+  const maxTop = Math.max(0, window.innerHeight - rect.height);
+  return { left: Math.max(0, Math.min(Number(left) || 0, maxLeft)), top: Math.max(0, Math.min(Number(top) || 0, maxTop)) };
+}
+function setPipPosition(el, left, top) {
+  const position = clampPipPosition(el, left, top);
+  el.style.left = `${position.left}px`;
+  el.style.top = `${position.top}px`;
+  el.style.right = "auto";
+  el.style.bottom = "auto";
+  return position;
+}
+function setupPipDrag(el) {
+  const handle = el.querySelector("[data-pip-drag-handle]");
+  if (!handle) return;
+  const initial = el.getBoundingClientRect();
+  setPipPosition(el, initial.left, initial.top);
+  const saved = (() => { try { return JSON.parse(sessionStorage.getItem("iln:pip-position") || "null"); } catch { return null; } })();
+  if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) setPipPosition(el, saved.left, saved.top);
+  let dragging = false;
+  let offsetX = 0;
+  let offsetY = 0;
+  const onPointerDown = (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    if (event.target.closest("button")) return;
+    const rect = el.getBoundingClientRect();
+    dragging = true;
+    offsetX = event.clientX - rect.left;
+    offsetY = event.clientY - rect.top;
+    el.classList.add("is-dragging");
+    handle.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  };
+  const onPointerMove = (event) => {
+    if (!dragging) return;
+    const position = setPipPosition(el, event.clientX - offsetX, event.clientY - offsetY);
+    try { sessionStorage.setItem("iln:pip-position", JSON.stringify(position)); } catch { }
+  };
+  const stop = (event) => {
+    if (!dragging) return;
+    dragging = false;
+    el.classList.remove("is-dragging");
+    if (event?.pointerId !== undefined) handle.releasePointerCapture?.(event.pointerId);
+    const rect = el.getBoundingClientRect();
+    try { sessionStorage.setItem("iln:pip-position", JSON.stringify({ left: rect.left, top: rect.top })); } catch { }
+  };
+  const onKeyDown = (event) => {
+    if (!event.altKey || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home"].includes(event.key)) return;
+    const rect = el.getBoundingClientRect();
+    const step = event.shiftKey ? 80 : 24;
+    const next = event.key === "Home" ? { left: window.innerWidth - rect.width - 20, top: window.innerHeight - rect.height - 20 } : {
+      left: rect.left + (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0),
+      top: rect.top + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0),
+    };
+    setPipPosition(el, next.left, next.top);
+    const position = el.getBoundingClientRect();
+    try { sessionStorage.setItem("iln:pip-position", JSON.stringify({ left: position.left, top: position.top })); } catch { }
+    event.preventDefault();
+  };
+  const onViewportChange = () => { const rect = el.getBoundingClientRect(); setPipPosition(el, rect.left, rect.top); };
+  handle.addEventListener("pointerdown", onPointerDown);
+  handle.addEventListener("pointermove", onPointerMove);
+  handle.addEventListener("pointerup", stop);
+  handle.addEventListener("pointercancel", stop);
+  handle.addEventListener("keydown", onKeyDown);
+  window.addEventListener("resize", onViewportChange);
+  window.addEventListener("orientationchange", onViewportChange);
+  pipDragCleanup = () => {
+    handle.removeEventListener("pointerdown", onPointerDown);
+    handle.removeEventListener("pointermove", onPointerMove);
+    handle.removeEventListener("pointerup", stop);
+    handle.removeEventListener("pointercancel", stop);
+    handle.removeEventListener("keydown", onKeyDown);
+    window.removeEventListener("resize", onViewportChange);
+    window.removeEventListener("orientationchange", onViewportChange);
+  };
+}
 async function openPipWindow() {
   const mirror = state.mirrors[state.mirrorIndex];
   if (!mirror || !state.detail) { toast("Belum ada video", "Pilih episode dulu sebelum membuka popup."); return; }
@@ -317,10 +397,11 @@ async function openPipWindow() {
   closePipWindow();
   const el = document.createElement("div");
   el.className = "pip-window always-bar";
-  el.innerHTML = `<div class="pip-head"><span class="pip-title">${esc(state.detail.title)} — EP ${state.episodeIndex + 1}</span><button class="pip-btn" data-pip-prev title="Episode sebelumnya" aria-label="Episode sebelumnya"><svg class="ico"><use href="#i-prev"/></svg></button><button class="pip-btn" data-pip-next title="Episode berikutnya" aria-label="Episode berikutnya"><svg class="ico"><use href="#i-next"/></svg></button><button class="pip-btn" data-pip-close title="Tutup popup" aria-label="Tutup popup"><svg class="ico"><use href="#i-close"/></svg></button></div><div class="pip-body"></div>`;
+  el.innerHTML = `<div class="pip-head" data-pip-drag-handle tabindex="0" role="group" aria-label="Pindahkan popup player"><span class="pip-title">${esc(state.detail.title)} — EP ${state.episodeIndex + 1}</span><button class="pip-btn" data-pip-prev title="Episode sebelumnya" aria-label="Episode sebelumnya"><svg class="ico"><use href="#i-prev"/></svg></button><button class="pip-btn" data-pip-next title="Episode berikutnya" aria-label="Episode berikutnya"><svg class="ico"><use href="#i-next"/></svg></button><button class="pip-btn" data-pip-close title="Tutup popup" aria-label="Tutup popup"><svg class="ico"><use href="#i-close"/></svg></button></div><div class="pip-body"></div>`;
   $(".pip-body", el).appendChild(iframe);
   document.body.appendChild(el);
   pipPort = el;
+  setupPipDrag(el);
   el.addEventListener("click", (event) => {
     const act = event.target.closest("[data-pip-prev],[data-pip-next],[data-pip-close]")?.dataset;
     if (!act) return;
@@ -335,7 +416,7 @@ async function playEpisodeInPip(target) {
   updateEpisodeNav(); renderDetail();
   try { const response = await api.mirrors(target.slug); state.mirrors = response.data || []; state.mirrorIndex = 0; const m = state.mirrors[0]; const iframe = pipPort?.querySelector("iframe"); if (m && iframe) { iframe.src = m.url; $("#mirrorLabel").textContent = m.name || "Mirror 1"; const t = pipPort?.querySelector(".pip-title"); if (t) t.textContent = `${state.detail.title} — EP ${state.episodeIndex + 1}`; } } catch { }
 }
-function closePipWindow() { if (!pipPort) return; const iframe = pipPort.querySelector("iframe"); if (iframe) $("#playerBox").appendChild(iframe); pipPort.classList.add("is-closing"); const el = pipPort; setTimeout(() => el.remove(), 220); pipPort = null; }
+function closePipWindow() { if (!pipPort) return; const iframe = pipPort.querySelector("iframe"); if (iframe) $("#playerBox").appendChild(iframe); pipDragCleanup?.(); pipDragCleanup = null; pipPort.classList.add("is-closing"); const el = pipPort; setTimeout(() => el.remove(), 220); pipPort = null; }
 $("#pipBtn")?.addEventListener("click", () => openPipWindow());
 async function openDetail(id) { const source = normAnime(findAnime(id) || { slug: id, id }); $("#watchOverlay").hidden = false; document.body.style.overflow = "hidden"; $("#watchTitle").textContent = source.title; $("#watchSub").textContent = ""; $("#playerBox").innerHTML = `<div class="player-loading"><div class="spinner"></div></div>`; try { const response = await api.detail(source.slug); state.detail = normAnime({ ...response.data, id: response.data.slug || source.slug }); state.detail.episodes = response.data.episodes || []; state.episodeIndex = -1; renderDetail(); const first = state.detail.episodes[0]; if (first?.slug) playEpisode(first.slug, Number(first.number), null, false); } catch (error) { $("#watchSub").textContent = error.message; } }
 function closeWatch() { const overlay = $("#watchOverlay"); const modal = $("#watchModal"); closePipWindow(); hideVideoControls(); overlay.classList.add("is-closing"); modal.classList.add("is-closing"); setTimeout(() => { overlay.hidden = true; overlay.classList.remove("is-closing"); modal.classList.remove("is-closing"); document.body.style.overflow = ""; state.detail = null; bindActions(); }, 200); }

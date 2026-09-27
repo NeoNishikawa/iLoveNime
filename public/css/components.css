@@ -560,11 +560,16 @@
 .pip-window.is-closing{animation:pipOut .22s ease-in forwards}
 .pip-window .pip-head{
   position:absolute;top:0;left:0;right:0;z-index:5;height:42px;
-  display:flex;align-items:center;gap:8px;padding:5px 8px;
+  display:flex;align-items:center;gap:8px;padding:5px 8px;cursor:grab;touch-action:none;
   background:linear-gradient(rgba(0,0,0,.68), transparent);
   opacity:0;transition:opacity .22s ease-in-out;pointer-events:none;
 }
 .pip-window:hover .pip-head,.pip-window.always-bar .pip-head{opacity:1;pointer-events:auto}
+.pip-window .pip-head:focus-visible{opacity:1;pointer-events:auto;outline:2px solid var(--gold);outline-offset:-2px}
+.pip-window.is-dragging .pip-head{cursor:grabbing;user-select:none}
+.pip-window.is-dragging{transition:none}
+.pip-window .pip-head .pip-title{cursor:grab}
+.pip-window.is-dragging .pip-head .pip-title{cursor:grabbing}
 .pip-window .pip-title{flex:1;min-width:0;font-size:11.5px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-shadow:0 1px 3px rgba(0,0,0,.8)}
 .pip-window .pip-body{position:absolute;inset:0}
 .pip-window iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
