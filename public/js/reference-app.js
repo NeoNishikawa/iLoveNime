@@ -363,7 +363,6 @@ function openCountdown() {
           <b class="countdown-value">—</b>
         </article>
       </div>
-      <p class="countdown-note">Tanggal target diatur oleh publisher di <code>public/js/countdown-config.js</code>.</p>
     </div>
     <div class="confirm-actions"><button class="btn btn-primary" data-countdown-close type="button">Tutup</button></div>
   </div>`;
