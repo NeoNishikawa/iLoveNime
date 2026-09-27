@@ -1,7 +1,6 @@
 import { api } from "./api.js";
 import { attach, closeActive } from "./dropdown.js";
-import { pageSizeFor, pageCountFor, pageSlice, isItemComplete, isAllowedAvatarFile, buildExportPayload, mergeImportedProfile, getCountdownParts } from "./app-utils.js";
-import { COUNTDOWN_TARGETS } from "./countdown-config.js";
+import { pageSizeFor, pageCountFor, pageSlice, isItemComplete, isAllowedAvatarFile, buildExportPayload, mergeImportedProfile } from "./app-utils.js";
 
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
@@ -232,28 +231,32 @@ function playEraseSequence(onDone) {
 function holdable(el, duration, onDone) { if (!el) return; let raf = 0; let start = 0; let holding = false; const stop = (done = false) => { holding = false; cancelAnimationFrame(raf); el.style.setProperty("--hold", done ? 1 : 0); if (done) onDone(); }; const tick = () => { if (!holding) return; const progress = Math.min(1, (performance.now() - start) / duration); el.style.setProperty("--hold", progress); if (progress >= 1) stop(true); else raf = requestAnimationFrame(tick); }; el.addEventListener("pointerdown", (e) => { if (e.button !== 0) return; e.preventDefault(); holding = true; start = performance.now(); raf = requestAnimationFrame(tick); }); ["pointerup", "pointerleave", "pointercancel"].forEach((event) => el.addEventListener(event, () => stop(false))); }
 function markWatched(number) { const a = state.detail; if (!a) return; const current = getStored(a.slug) || normalizeStored({ slug: a.slug, title: a.title, image: a.image, total: a.total, watchedEpisodes: [], progress: 0, status: "watching", genres: a.genres }); current.watchedEpisodes = [...new Set([...(current.watchedEpisodes || []), Number(number)])].sort((x, y) => x - y); current.progress = Math.max(current.progress, Number(number)); current.status = isComplete(current) ? "completed" : "watching"; state.storageItems = [...state.storageItems.filter((i) => i.slug !== current.slug), current]; saveState(); renderProfile(); renderStorage(); }
 async function playEpisode(slug, number, button, shouldMark = true) { const episodes = state.detail?.episodes || []; const newIndex = episodes.findIndex((e) => e.slug === slug); const direction = newIndex > state.episodeIndex ? "right" : "left"; state.episodeIndex = newIndex; if (shouldMark) markWatched(number); renderDetail(); updateEpisodeNav(); $("#playerBox").innerHTML = `<div class="player-loading"><div class="spinner"></div></div>`; try { const response = await api.mirrors(slug); state.mirrors = response.data || []; if (!state.mirrors.length) throw new Error("Mirror tidak tersedia saat ini."); state.mirrorIndex = 0; loadMirror(0, direction); button?.classList.add("watched"); } catch (error) { state.mirrors = []; state.mirrorIndex = 0; $("#mirrorLabel").textContent = "Mirror tidak tersedia"; $("#playerBox").innerHTML = `<div class="player-ph"><div class="msg">${esc(error.message)}</div></div>`; } }
-function loadMirror(index, direction = "right") { const mirror = state.mirrors[index]; if (!mirror) return; state.mirrorIndex = index; const box = $("#playerBox"); box.classList.add("mirror-fading"); setTimeout(() => { box.innerHTML = `<iframe src="${esc(mirror.url)}" title="Anime stream" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`; box.classList.remove("mirror-fading"); box.classList.add(`mirror-in-${direction === "left" ? "left" : "right"}`); box.addEventListener("animationend", () => box.classList.remove("mirror-in-right", "mirror-in-left"), { once: true }); }, 170); $("#mirrorLabel").textContent = mirror.name || `Mirror ${index + 1}`; $("#mirrorOptions").innerHTML = state.mirrors.map((m, i) => `<button data-mirror-index="${i}" class="${i === index ? "active" : ""}">${esc(m.name || `Mirror ${i + 1}`)}</button>`).join(""); closeActive(); $$("#mirrorOptions [data-mirror-index]").forEach((b) => b.onclick = (event) => { event.stopPropagation(); loadMirror(Number(b.dataset.mirrorIndex), Number(b.dataset.mirrorIndex) > index ? "right" : "left"); }); $("#mirrorNote").textContent = "Mirror aktif dari source streaming. Jika gagal, pilih mirror lain."; }
+function loadMirror(index, direction = "right") { const mirror = state.mirrors[index]; if (!mirror) return; state.mirrorIndex = index; const box = $("#playerBox"); box.classList.add("mirror-fading"); setTimeout(() => { box.innerHTML = `<iframe src="${esc(mirror.url)}" title="Anime stream" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`; box.classList.remove("mirror-fading"); box.classList.add(`mirror-in-${direction === "left" ? "left" : "right"}`); box.addEventListener("animationend", () => box.classList.remove("mirror-in-right", "mirror-in-left"), { once: true }); showVideoControls(); }, 170); $("#mirrorLabel").textContent = mirror.name || `Mirror ${index + 1}`; $("#mirrorOptions").innerHTML = state.mirrors.map((m, i) => `<button data-mirror-index="${i}" class="${i === index ? "active" : ""}">${esc(m.name || `Mirror ${i + 1}`)}</button>`).join(""); closeActive(); $$("#mirrorOptions [data-mirror-index]").forEach((b) => b.onclick = (event) => { event.stopPropagation(); loadMirror(Number(b.dataset.mirrorIndex), Number(b.dataset.mirrorIndex) > index ? "right" : "left"); }); $("#mirrorNote").textContent = "Mirror aktif dari source streaming. Jika gagal, pilih mirror lain."; }
 function renderDetail() { const a = state.detail; const item = getStored(a.slug); $("#watchTitle").textContent = a.title; $("#watchSub").textContent = `${a.type || "Series"} · ${a.status || "Unknown"}`; $("#playerBox").innerHTML = `<div class="player-ph"><div class="play-btn"><svg class="ico"><use href="#i-play"/></svg></div><div class="msg">Pilih episode untuk memulai.</div></div>`; $("#watchDetailGrid").innerHTML = `<div class="detail-item"><div class="k">Episodes</div><div class="v">${a.episodes?.length || a.total || "?"}</div></div><div class="detail-item"><div class="k">Rating</div><div class="v">${a.rating || "—"}</div></div><div class="detail-item"><div class="k">Studio</div><div class="v">${esc(a.studio || "—")}</div></div>`; $("#watchSynopsis").textContent = a.synopsis || "Sinopsis belum tersedia dari source."; $("#watchGenres").innerHTML = (a.genres || []).map((g) => `<span class="chip">${esc(g.name || g)}</span>`).join(""); $("#watchActions").innerHTML = `<button class="btn btn-primary" data-detail-add>${item ? "Saved locally" : "+Storage"}</button><button class="btn" data-detail-prev ${state.episodeIndex <= 0 ? "disabled" : ""}>← Previous</button><button class="btn" data-detail-next ${state.episodeIndex >= (a.episodes?.length || 1) - 1 ? "disabled" : ""}>Next →</button>`; $("#episodeList").innerHTML = (a.episodes || []).map((ep, index) => `<button class="ep-item ${item?.watchedEpisodes?.includes(Number(ep.number)) ? "watched" : ""}" data-episode-slug="${esc(ep.slug)}" data-episode-number="${esc(ep.number)}"><span class="st">${item?.watchedEpisodes?.includes(Number(ep.number)) ? "✓" : ""}</span><span>EP ${String(ep.number).padStart(2, "0")} · ${esc(ep.title || "Episode")}</span></button>`).join("") || empty("Episode belum tersedia.", "Source belum mengembalikan episode."); $("[data-detail-add]").onclick = () => addStorage(a.slug); $("[data-detail-prev]").onclick = () => navigateEpisode(-1); $("[data-detail-next]").onclick = () => navigateEpisode(1); $$('[data-episode-slug]').forEach((b) => b.onclick = () => playEpisode(b.dataset.episodeSlug, Number(b.dataset.episodeNumber), b)); }
 function navigateEpisode(delta) { const episodes = state.detail?.episodes || []; const target = episodes[state.episodeIndex + delta]; if (!target) return; playEpisode(target.slug, Number(target.number), null); updateEpisodeNav(); }
 function updateEpisodeNav() { $("[data-detail-prev]")?.toggleAttribute("disabled", state.episodeIndex <= 0); $("[data-detail-next]")?.toggleAttribute("disabled", state.episodeIndex >= (state.detail?.episodes?.length || 1) - 1); /* Sinkronkan tombol overlay video */ const prev = $("#prevEpBtn"), next = $("#nextEpBtn"); prev?.toggleAttribute("disabled", state.episodeIndex <= 0); next?.toggleAttribute("disabled", state.episodeIndex >= (state.detail?.episodes?.length || 1) - 1); }
 
 /* ---------- In-video control overlay ----------
    Klik di area video memunculkan kontrol (mirror, prev/next, PiP);
-   auto-hide setelah 3 dtk. Klik pada iframe disampaikan ke video,
-   jadi hotspot hanya aktif ketika overlay sedang tampil. */
+   toolbar tetap tersedia, sementara area iframe tetap menerima klik video. */
 const videoOverlay = $("#videoOverlay");
-const voHotspot = $(".vo-hotspot");
+const playerStage = $("#playerStage");
 let voHideTimer = 0;
 function showVideoControls() {
   if (!videoOverlay || videoOverlay.closest("#watchOverlay")?.hidden) return;
   if (!state.mirrors.length) return;
   videoOverlay.hidden = false;
   videoOverlay.classList.add("show");
-  clearTimeout(voHideTimer);
-  voHideTimer = window.setTimeout(hideVideoControls, 3000);
 }
 function hideVideoControls() { videoOverlay?.classList.remove("show"); clearTimeout(voHideTimer); }
-voHotspot?.addEventListener("click", () => showVideoControls());
+/* Dengarkan klik dari stage, bukan dari lapisan di atas iframe. Dengan begitu
+   klik pertama tetap diterima kontrol play milik mirror di dalam iframe. */
+playerStage?.addEventListener("click", (event) => {
+  if (event.target.closest("#videoOverlay")) return;
+  showVideoControls();
+});
+playerStage?.addEventListener("pointerenter", showVideoControls);
+playerStage?.addEventListener("pointermove", showVideoControls);
 videoOverlay?.addEventListener("click", (event) => {
   /* Klik pada area kosong overlay (di luar bar) menyembunyikan kontrol */
   if (event.target === videoOverlay) { hideVideoControls(); return; }
@@ -345,37 +348,6 @@ const FILTER_OPTIONS = { mainType: [["","Tipe"],["Serial TV","Serial TV"],["Live
 function bindDropdown(root) { if (!root) return; const key = root.dataset.filter; const panel = $(".gf-panel", root); attach(root); const setOptions = () => { $(".gf-grid", root).innerHTML = (FILTER_OPTIONS[key] || []).map(([value,label]) => `<button class="gf-chip ${state[key] === value ? "on" : ""}" data-value="${esc(value)}">${esc(label)}</button>`).join(""); }; setOptions(); $$('[data-value]', panel).forEach((button) => button.onclick = () => { state[key] = button.dataset.value; $(".gf-label", root).textContent = button.textContent; setOptions(); closeActive(); root.closest("[data-filter-scope=storage]") ? refreshStorageFilters() : renderSearch(); }); }
 function bindGenre(root) { if (!root) return; attach(root); const panel = $(".gf-panel", root); const storage = root.classList.contains("gf-storage"); const set = storage ? state.storageGenres : state.mainGenres; const genres = [...new Map([...GENRE_OPTIONS, ...state.genres].map((g) => [g.slug, g])).values()]; $(".gf-grid", root).innerHTML = genres.map((g) => `<button class="gf-chip ${set.has(g.slug) ? "on" : ""}" data-genre="${esc(g.slug)}">${esc(g.name)}</button>`).join(""); updateFilterLabel(root, set, "All Genre"); $$('[data-genre]', panel).forEach((b) => b.onclick = () => { set.has(b.dataset.genre) ? set.delete(b.dataset.genre) : set.add(b.dataset.genre); b.classList.toggle("on", set.has(b.dataset.genre)); updateFilterLabel(root, set, "All Genre"); storage ? refreshStorageFilters() : renderSearch(); }); $(`[data-gf-clear]`, root).onclick = () => { set.clear(); updateFilterLabel(root, set, "All Genre"); $$("[data-genre]", panel).forEach((b) => b.classList.remove("on")); storage ? refreshStorageFilters() : renderSearch(); }; }
 function scrollToSection(selector, button) { const target = $(selector); if (!target) return; $("#mainScroll").scrollTo({ top: target.offsetTop - 20, behavior: "smooth" }); $$(".nav-item[data-nav]").forEach((b) => b.classList.toggle("active", b === button)); }
-function openCountdown() {
-  const root = $("#confirmRoot");
-  const overlay = document.createElement("div");
-  overlay.className = "overlay";
-  overlay.innerHTML = `<div class="about-modal countdown-modal" role="dialog" aria-modal="true" aria-labelledby="countdown-modal-title">
-    <h3 id="countdown-modal-title">Jadwal Penting</h3>
-    <div class="modal-content">
-      <p class="countdown-intro">Hitung mundur ini mengikuti waktu perangkat dan akan diperbarui setiap detik.</p>
-      <div class="countdown-list">
-        <article class="countdown-card" data-countdown="maintenance">
-          <div><strong>Maintenance</strong><span>Persiapan pemeliharaan sistem</span></div>
-          <b class="countdown-value">—</b>
-        </article>
-        <article class="countdown-card" data-countdown="domain">
-          <div><strong>Pergantian Domain</strong><span>Rencana perpindahan alamat website</span></div>
-          <b class="countdown-value">—</b>
-        </article>
-      </div>
-    </div>
-    <div class="confirm-actions"><button class="btn btn-primary" data-countdown-close type="button">Tutup</button></div>
-  </div>`;
-  root.appendChild(overlay);
-  const format = (parts) => parts.expired ? "Waktu tiba" : `${parts.days}h ${String(parts.hours).padStart(2, "0")}j ${String(parts.minutes).padStart(2, "0")}m ${String(parts.seconds).padStart(2, "0")}d`;
-  const update = () => overlay.querySelectorAll("[data-countdown]").forEach((card) => { card.querySelector(".countdown-value").textContent = format(getCountdownParts(COUNTDOWN_TARGETS[card.dataset.countdown])); });
-  update();
-  const timer = window.setInterval(update, 1000);
-  const close = () => { window.clearInterval(timer); overlay.remove(); };
-  overlay.querySelector("[data-countdown-close]").onclick = close;
-  overlay.addEventListener("click", (event) => { if (event.target === overlay) close(); });
-}
-
 function openAbout() { const root = $("#confirmRoot"); const overlay = document.createElement("div"); overlay.className = "overlay"; overlay.innerHTML = 
   `<div class="about-modal" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
   <h3 id="about-modal-title">Tentang iLoveNime</h3>
@@ -395,10 +367,6 @@ function openAbout() { const root = $("#confirmRoot"); const overlay = document.
       <p>Ketersediaan <em>source</em> dan <em>mirror</em> dapat berubah mengikuti kondisi jaringan. Kami memohon maaf jika alamat web harus berganti link setiap bulannya demi menekan biaya operasional hosting agar layanan tetap gratis.</p>
     </div>
 
-    <div class="about-notice-box">
-      <p>⏳ <strong>Jadwal Maintenance &amp; Hitung Mundur:</strong><br>
-      Anda dapat memantau waktu tersisa sebelum domain berganti dan jadwal pemeliharaan (*maintenance*) rutin melalui widget <em>countdown</em> di bagian **bawah sidebar**.</p>
-    </div>
   </div>
 
   <div class="confirm-actions">
@@ -476,7 +444,7 @@ function setup() {
   $$(".nav-item[data-nav]").forEach((b) => b.onclick = () => { const map = { dashboard: "#profileSection", update: "#updateSection", storage: "#storageSection" }; scrollToSection(map[b.dataset.nav], b); setDrawer(false); });
   const mainScroll = $("#mainScroll");
   mainScroll?.addEventListener("scroll", () => { const sections = [["#profileSection","dashboard"],["#updateSection","update"],["#storageSection","storage"]]; let active = "dashboard"; for (const [selector, name] of sections) { const el = $(selector); if (el && el.offsetTop - mainScroll.scrollTop < 180) active = name; } $$(".nav-item[data-nav]").forEach((b) => b.classList.toggle("active", b.dataset.nav === active)); }, { passive: true });
-  $$(".nav-item[data-support]").forEach((b) => b.onclick = () => { setDrawer(false); if (b.dataset.support === "about") openAbout(); if (b.dataset.support === "donate") window.open("https://sociabuzz.com/neonishikawa/tribe", "_blank", "noopener"); if (b.dataset.support === "feedback") window.open("https://tally.so/r/7RAZd2", "_blank", "noopener"); if (b.dataset.support === "countdown") openCountdown(); });
+  $$(".nav-item[data-support]").forEach((b) => b.onclick = () => { setDrawer(false); if (b.dataset.support === "about") openAbout(); if (b.dataset.support === "donate") window.open("https://sociabuzz.com/neonishikawa/tribe", "_blank", "noopener"); if (b.dataset.support === "feedback") window.open("https://tally.so/r/7RAZd2", "_blank", "noopener"); });
   $("#profilePopup").addEventListener("click", (e) => { if (e.target === $("#profilePopup")) finishEdit(); });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (!$("#watchOverlay").hidden) closeWatch(); else $("#profilePopup").hidden = true; } });
   [$(".gf-header"), $(".gf-storage")].forEach(bindGenre);

@@ -4,6 +4,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 let view;
+const componentsCss = fs.readFileSync(path.join(__dirname, "../public/css/components.css"), "utf8");
+const referenceApp = fs.readFileSync(path.join(__dirname, "../public/js/reference-app.js"), "utf8");
+const indexHtml = fs.readFileSync(path.join(__dirname, "../public/index.html"), "utf8");
 test.before(async () => {
   const source = fs.readFileSync(path.join(__dirname, "../public/js/view.js"), "utf8");
   view = await import(`data:text/javascript,${encodeURIComponent(source)}`);
@@ -31,4 +34,15 @@ test("filter Local Data menampilkan label status yang ramah pengguna", () => {
   assert.match(html, /Rencana/);
   assert.match(html, /Block/);
   assert.match(html, /aria-pressed="true"/);
+});
+
+test("kontrol video tidak boleh menangkap klik yang seharusnya masuk ke iframe", () => {
+  assert.match(componentsCss, /\.vo-hotspot\{[^}]*pointer-events:none/);
+  assert.match(referenceApp, /playerStage\?\.addEventListener\("click", \(event\) => \{/);
+  assert.doesNotMatch(referenceApp, /voHotspot\?\.addEventListener\("click"/);
+});
+
+test("countdown dinonaktifkan agar tidak membuat timer atau refresh berulang", () => {
+  assert.doesNotMatch(indexHtml, /data-support="countdown"/);
+  assert.doesNotMatch(referenceApp, /COUNTDOWN_TARGETS|getCountdownParts|openCountdown|setInterval/);
 });
